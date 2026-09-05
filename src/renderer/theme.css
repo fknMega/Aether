@@ -329,6 +329,7 @@ button, input, textarea, select { font-family: inherit; color: inherit; }
 .model-pick { display: inline-flex; align-items: center; gap: 7px; background: var(--paper-raised); border: 1px solid var(--border); border-radius: var(--r-pill); padding: 4px 8px 4px 11px; cursor: pointer; transition: border-color var(--t-fast); }
 .model-pick:hover { border-color: var(--ember-line); }
 .model-pick .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ember); box-shadow: 0 0 8px rgba(255,111,165,0.5); flex-shrink: 0; }
+.model-pick .pfx { font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-3); }
 .model-pick select { background: transparent; border: 0; outline: 0; color: var(--ink-2); font-family: var(--font-mono); font-size: 11.5px; cursor: pointer; -webkit-appearance: none; appearance: none; padding-right: 2px; }
 .model-pick:hover select { color: var(--ink); }
 .model-pick select option { background: var(--paper); color: var(--ink); }

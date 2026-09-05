@@ -12,6 +12,7 @@ const MODELS = [
   { id: "claude-sonnet-5", label: "Sonnet 5" },
   { id: "claude-haiku-4-5-20251001", label: "Haiku 4.5" },
 ];
+const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 
 export function Composer() {
   const [text, setText] = useState("");
@@ -24,6 +25,7 @@ export function Composer() {
   const send = useStore((s) => s.send);
   const cancel = useStore((s) => s.cancel);
   const model = useStore((s) => s.settings?.model);
+  const effort = useStore((s) => s.settings?.effort);
   const saveSettings = useStore((s) => s.saveSettings);
   const modelOptions = MODELS.some((m) => m.id === model) || !model ? MODELS : [...MODELS, { id: model, label: model }];
 
@@ -86,6 +88,12 @@ export function Composer() {
             <span className="dot" />
             <select value={model ?? "claude-opus-5"} onChange={(e) => void saveSettings({ model: e.target.value })}>
               {modelOptions.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+            </select>
+          </label>
+          <label className="model-pick" title="Reasoning effort — higher digs deeper, lower is snappier">
+            <span className="pfx">effort</span>
+            <select value={effort ?? "medium"} onChange={(e) => void saveSettings({ effort: e.target.value as (typeof EFFORTS)[number] })}>
+              {EFFORTS.map((eff) => <option key={eff} value={eff}>{eff}</option>)}
             </select>
           </label>
           <div className="hint">Enter to send · Shift+Enter for a new line</div>
