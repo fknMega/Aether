@@ -2,7 +2,10 @@
 
 <img src="build/icon.png" width="118" alt="Aether" />
 
+
 # Aether
+
+[Join the Discord](https://discord.gg/zjawxkDZVP)
 
 **An OSINT analyst that lives on your desktop.**
 
