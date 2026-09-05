@@ -19,6 +19,8 @@ export const IPC = {
 
   providerStatus: "provider:status",
   providerSetKey: "provider:setKey",
+  providerLogin: "provider:login",
+  providerLogout: "provider:logout",
 
   modulesList: "modules:list",
   moduleSave: "modules:save",
@@ -80,10 +82,14 @@ export interface AetherApi {
   checkForUpdate(): Promise<UpdateStatus>;
   installUpdate(): Promise<void>;
 
-  /** Provider readiness: whether a key is stored, and any listable models. */
+  /** Provider readiness: whether a key/sign-in is present, and any listable models. */
   providerStatus(): Promise<ProviderStatus>;
   /** Store (or clear, with "") an API key for a provider. Never read back. */
   setProviderKey(provider: Provider, key: string): Promise<ProviderStatus>;
+  /** Start a browser OAuth sign-in for a provider (Gemini). Resolves when done. */
+  providerLogin(provider: Provider): Promise<{ ok: boolean; message: string }>;
+  /** Sign out of an OAuth provider (clears stored tokens). */
+  providerLogout(provider: Provider): Promise<ProviderStatus>;
 
   /** Modules (secrets redacted — values never leave the main process). */
   listModules(): Promise<ModuleConfig[]>;

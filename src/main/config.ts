@@ -50,6 +50,7 @@ const DEFAULT_SETTINGS: AetherSettings = {
   openaiModel: process.env.OPENAI_MODEL ?? "gpt-4o",
   ollamaBaseUrl: process.env.OLLAMA_BASE_URL ?? "http://localhost:11434/v1",
   ollamaModel: process.env.OLLAMA_MODEL ?? "llama3.1",
+  geminiModel: process.env.GEMINI_MODEL ?? "gemini-2.5-pro",
 
   autoUpdate: true,
 };

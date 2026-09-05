@@ -110,8 +110,10 @@ export type AgentEvent =
 // ── Settings ─────────────────────────────────────────────────────────────────
 
 /** Which brain runs the turn. `claude` uses the Agent SDK; `openai` and `ollama`
- *  both speak the OpenAI-compatible /chat/completions API with tool calling. */
-export type Provider = "claude" | "openai" | "ollama";
+ *  both speak the OpenAI-compatible /chat/completions API with tool calling;
+ *  `gemini` signs in with a Google account (OAuth) and talks to Google's Code
+ *  Assist API in Gemini's native content format. */
+export type Provider = "claude" | "openai" | "ollama" | "gemini";
 
 export interface AetherSettings {
   ownerName: string;
@@ -127,6 +129,8 @@ export interface AetherSettings {
   /** Local Ollama endpoint + model. */
   ollamaBaseUrl: string;
   ollamaModel: string;
+  /** Gemini model used over the Google Code Assist API (OAuth sign-in). */
+  geminiModel: string;
 
   /** Check for app updates on launch. */
   autoUpdate: boolean;

@@ -28,10 +28,12 @@ let settings: AetherSettings = {
   openaiModel: "gpt-4o",
   ollamaBaseUrl: "http://localhost:11434/v1",
   ollamaModel: "llama3.1",
+  geminiModel: "gemini-2.5-pro",
   autoUpdate: true,
 };
 
 let providerKeySet = false;
+let geminiSignedIn = false;
 
 const auth: AuthStatus = q.get("onboard")
   ? { loggedIn: false, authMethod: null, detail: "Run npm run login, or sign in here." }
@@ -266,10 +268,14 @@ const api: AetherApi = {
 
   providerStatus: async () => ({
     provider: settings.provider,
-    hasKey: settings.provider === "openai" ? providerKeySet : true,
-    models: settings.provider === "ollama" ? ["llama3.1:latest", "qwen2.5:14b", "gemma4-uncensored-64k:latest"] : [],
+    hasKey: settings.provider === "openai" ? providerKeySet : settings.provider === "gemini" ? geminiSignedIn : true,
+    models: settings.provider === "ollama" ? ["llama3.1:latest", "qwen2.5:14b", "gemma4-uncensored-64k:latest"]
+      : settings.provider === "gemini" ? ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"] : [],
+    detail: settings.provider === "gemini" ? (geminiSignedIn ? "Signed in as you@gmail.com" : "Sign in with your Google account to use Gemini free.") : undefined,
   }),
   setProviderKey: async (_p, key) => { providerKeySet = !!key; return { provider: settings.provider, hasKey: settings.provider === "openai" ? providerKeySet : true, models: [] }; },
+  providerLogin: async (p) => { if (p === "gemini") geminiSignedIn = true; return { ok: true, message: "Signed in as you@gmail.com ✓" }; },
+  providerLogout: async (p) => { if (p === "gemini") geminiSignedIn = false; return { provider: settings.provider, hasKey: settings.provider === "gemini" ? geminiSignedIn : true, models: settings.provider === "gemini" ? ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"] : [] }; },
 
   listModules: async () => redactMods(),
   saveModule: async (mod) => {

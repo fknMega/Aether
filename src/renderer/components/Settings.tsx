@@ -105,8 +105,23 @@ function ModelPane() {
   const status = useStore((s) => s.providerStatus);
   const refreshStatus = useStore((s) => s.refreshProviderStatus);
   const setProviderKey = useStore((s) => s.setProviderKey);
+  const providerLogin = useStore((s) => s.providerLogin);
+  const providerLogout = useStore((s) => s.providerLogout);
   const [key, setKey] = useState("");
+  const [geminiBusy, setGeminiBusy] = useState(false);
+  const [geminiMsg, setGeminiMsg] = useState<string | null>(null);
   const provider = settings.provider ?? "claude";
+
+  const signInGemini = async () => {
+    setGeminiBusy(true);
+    setGeminiMsg("Opening your browser to sign in to Google…");
+    try {
+      const r = await providerLogin("gemini");
+      setGeminiMsg(r.message);
+    } finally {
+      setGeminiBusy(false);
+    }
+  };
 
   const pick = async (p: typeof provider) => { await save({ provider: p }); void refreshStatus(); };
 
@@ -118,6 +133,7 @@ function ModelPane() {
         <div className="seg-pick">
           <button className={provider === "claude" ? "on" : ""} onClick={() => void pick("claude")}>Claude</button>
           <button className={provider === "openai" ? "on" : ""} onClick={() => void pick("openai")}>ChatGPT</button>
+          <button className={provider === "gemini" ? "on" : ""} onClick={() => void pick("gemini")}>Gemini</button>
           <button className={provider === "ollama" ? "on" : ""} onClick={() => void pick("ollama")}>Ollama (local)</button>
         </div>
       </div>
@@ -164,6 +180,35 @@ function ModelPane() {
             <label>Base URL</label>
             <div className="desc">Point this at any OpenAI-compatible gateway (Azure, OpenRouter, a proxy) if you're not using OpenAI directly.</div>
             <input type="text" className="mono" defaultValue={settings.openaiBaseUrl} onBlur={(e) => void save({ openaiBaseUrl: e.target.value.trim() })} placeholder="https://api.openai.com/v1" />
+          </div>
+        </>
+      )}
+
+      {provider === "gemini" && (
+        <>
+          <div className="field">
+            <label>Google account</label>
+            <div className="desc">
+              Sign in with your Google account to use Gemini free through Google's Code Assist — no API key. The
+              sign-in opens in your browser; the token is stored encrypted on this machine and never shown to the
+              renderer.
+            </div>
+            <div className="auth-row">
+              <span className={`dot-status ${status?.hasKey ? "ok" : "bad"}`} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600, fontSize: 14 }}>{status?.hasKey ? "Signed in" : "Not signed in"}</div>
+                <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{geminiMsg ?? status?.detail ?? "Sign in with your Google account to use Gemini free."}</div>
+              </div>
+              {!status?.hasKey && <button className="btn primary" disabled={geminiBusy} onClick={() => void signInGemini()}>{geminiBusy ? "Signing in…" : "Sign in with Google"}</button>}
+              {status?.hasKey && <button className="btn ghost" onClick={async () => { await providerLogout("gemini"); setGeminiMsg(null); }}>Sign out</button>}
+            </div>
+          </div>
+          <div className="field">
+            <label>Model</label>
+            <div className="desc">gemini-2.5-pro is the most capable; flash is faster. Tool calling drives the graph on all of them.</div>
+            <select defaultValue={settings.geminiModel} onChange={(e) => void save({ geminiModel: e.target.value })}>
+              {["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"].map((m) => <option key={m} value={m}>{m}</option>)}
+            </select>
           </div>
         </>
       )}

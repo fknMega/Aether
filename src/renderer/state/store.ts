@@ -44,6 +44,8 @@ interface Store {
 
   refreshProviderStatus(): Promise<void>;
   setProviderKey(provider: Provider, key: string): Promise<void>;
+  providerLogin(provider: Provider): Promise<{ ok: boolean; message: string }>;
+  providerLogout(provider: Provider): Promise<void>;
 
   refreshUpdateStatus(): Promise<void>;
   checkForUpdate(): Promise<void>;
@@ -106,6 +108,8 @@ export const useStore = create<Store>((set, get) => ({
 
   async refreshProviderStatus() { set({ providerStatus: await A.providerStatus() }); },
   async setProviderKey(provider, key) { set({ providerStatus: await A.setProviderKey(provider, key) }); },
+  async providerLogin(provider) { const r = await A.providerLogin(provider); await get().refreshProviderStatus(); return r; },
+  async providerLogout(provider) { set({ providerStatus: await A.providerLogout(provider) }); },
 
   async refreshUpdateStatus() { set({ updateStatus: await A.updateStatusGet() }); },
   async checkForUpdate() { set({ updateStatus: await A.checkForUpdate() }); },

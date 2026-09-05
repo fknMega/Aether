@@ -34,16 +34,27 @@ export function Composer() {
   // The picker follows the active provider: Claude presets, the local Ollama
   // models we discovered, or whatever OpenAI model is configured.
   const uniq = (xs: string[]) => [...new Set(xs.filter(Boolean))];
+  const GEMINI = ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"];
   const current =
     provider === "openai" ? (settings?.openaiModel ?? "gpt-4o")
     : provider === "ollama" ? (settings?.ollamaModel ?? "llama3.1")
+    : provider === "gemini" ? (settings?.geminiModel ?? "gemini-2.5-pro")
     : (settings?.model ?? "claude-opus-5");
   const modelOptions: Array<{ id: string; label: string }> =
     provider === "claude"
       ? (MODELS.some((m) => m.id === current) ? MODELS : [...MODELS, { id: current, label: current }])
-      : uniq(provider === "ollama" ? [current, ...localModels] : [current, "gpt-4o", "gpt-4o-mini", "o3-mini"]).map((m) => ({ id: m, label: m }));
+      : uniq(
+          provider === "ollama" ? [current, ...localModels]
+          : provider === "gemini" ? [current, ...GEMINI]
+          : [current, "gpt-4o", "gpt-4o-mini", "o3-mini"],
+        ).map((m) => ({ id: m, label: m }));
   const onPickModel = (v: string) =>
-    void saveSettings(provider === "openai" ? { openaiModel: v } : provider === "ollama" ? { ollamaModel: v } : { model: v });
+    void saveSettings(
+      provider === "openai" ? { openaiModel: v }
+      : provider === "ollama" ? { ollamaModel: v }
+      : provider === "gemini" ? { geminiModel: v }
+      : { model: v },
+    );
 
   const grow = () => { const el = taRef.current; if (el) { el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 200) + "px"; } };
 

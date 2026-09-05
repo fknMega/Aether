@@ -52,3 +52,6 @@ export const secrets = {
 };
 
 export const OPENAI_KEY = "OPENAI_API_KEY";
+/** Google OAuth token bundle for Gemini (JSON: refresh/access token, expiry,
+ *  discovered Code Assist project, email). Encrypted at rest like any secret. */
+export const GEMINI_OAUTH = "GEMINI_OAUTH";

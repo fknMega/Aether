@@ -7,6 +7,8 @@ import { store } from "./store";
 import { modules } from "./modules";
 import { runTurn, resetToolServer } from "./agent";
 import { runChatTurn, listOllamaModels } from "./chatEngine";
+import { runGeminiTurn } from "./geminiEngine";
+import { geminiSignedIn, geminiEmail, geminiLogin, geminiLogout } from "./geminiAuth";
 import { configureUpdater, getUpdateStatus, checkForUpdates, installUpdate } from "./updater";
 import { secrets, OPENAI_KEY } from "./secrets";
 import { decodeImages, writeAttachments, attachedImagesBlock } from "./images";
@@ -52,8 +54,8 @@ function sanitizeSettings(patch: Partial<AetherSettings>): Partial<AetherSetting
   if (patch.personaVoice === "flirty" || patch.personaVoice === "professional") out.personaVoice = patch.personaVoice;
   if (typeof patch.autonomy === "boolean") out.autonomy = patch.autonomy;
   if (typeof patch.autoUpdate === "boolean") out.autoUpdate = patch.autoUpdate;
-  if (["claude", "openai", "ollama"].includes(patch.provider as string)) out.provider = patch.provider;
-  for (const k of ["openaiBaseUrl", "openaiModel", "ollamaBaseUrl", "ollamaModel"] as const) {
+  if (["claude", "openai", "ollama", "gemini"].includes(patch.provider as string)) out.provider = patch.provider;
+  for (const k of ["openaiBaseUrl", "openaiModel", "ollamaBaseUrl", "ollamaModel", "geminiModel"] as const) {
     if (typeof patch[k] === "string") out[k] = (patch[k] as string).slice(0, 300);
   }
   return out;
@@ -70,8 +72,9 @@ async function startTurn(req: ChatRequest, conversationId: string, prompt: strin
   let failed = false;
   try {
     const prior = settings.provider === "claude" ? [] : store.listMessages(conversationId).slice(0, -1);
-    const stream = settings.provider === "claude"
-      ? runTurn(prompt, resumeId, settings, toolCtx, abort.signal)
+    const stream =
+      settings.provider === "claude" ? runTurn(prompt, resumeId, settings, toolCtx, abort.signal)
+      : settings.provider === "gemini" ? runGeminiTurn(prompt, prior, settings, toolCtx, abort.signal)
       : runChatTurn(prompt, prior, settings, toolCtx, abort.signal);
     for await (const event of stream) {
       if (event.type === "session") { store.setClaudeSessionId(conversationId, event.claudeSessionId); continue; }
@@ -96,14 +99,16 @@ async function startTurn(req: ChatRequest, conversationId: string, prompt: strin
   }
 }
 
+const GEMINI_MODELS = ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"];
+
 async function providerStatus(): Promise<ProviderStatus> {
-  const models = settings.provider === "ollama" ? await listOllamaModels(settings.ollamaBaseUrl) : [];
-  return {
-    provider: settings.provider,
-    hasKey: settings.provider === "openai" ? secrets.has(OPENAI_KEY) : true,
-    models,
-    detail: settings.provider === "ollama" && !models.length ? "No local models found. Is `ollama serve` running?" : undefined,
-  };
+  const p = settings.provider;
+  const models = p === "ollama" ? await listOllamaModels(settings.ollamaBaseUrl) : p === "gemini" ? GEMINI_MODELS : [];
+  const hasKey = p === "openai" ? secrets.has(OPENAI_KEY) : p === "gemini" ? geminiSignedIn() : true;
+  let detail: string | undefined;
+  if (p === "ollama" && !models.length) detail = "No local models found. Is `ollama serve` running?";
+  else if (p === "gemini") detail = geminiSignedIn() ? (geminiEmail() ? `Signed in as ${geminiEmail()}` : "Signed in with Google") : "Sign in with your Google account to use Gemini free.";
+  return { provider: p, hasKey, models, detail };
 }
 
 export function registerIpc(): void {
@@ -125,6 +130,15 @@ export function registerIpc(): void {
   ipcMain.handle(IPC.providerStatus, () => providerStatus());
   ipcMain.handle(IPC.providerSetKey, async (_e, provider: Provider, key: string) => {
     if (provider === "openai") secrets.set(OPENAI_KEY, typeof key === "string" ? key.trim() : "");
+    return providerStatus();
+  });
+  // OAuth sign-in (Gemini). Resolves when the browser flow completes.
+  ipcMain.handle(IPC.providerLogin, async (_e, provider: Provider) => {
+    if (provider === "gemini") return geminiLogin();
+    return { ok: false, message: "That provider signs in with an API key, not a browser login." };
+  });
+  ipcMain.handle(IPC.providerLogout, async (_e, provider: Provider) => {
+    if (provider === "gemini") geminiLogout();
     return providerStatus();
   });
 
