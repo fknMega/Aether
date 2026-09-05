@@ -155,6 +155,8 @@ export interface ModuleConfig {
   enabled: boolean;
   /** Built-in group or code connector: core fields are locked in the UI. */
   builtin: boolean;
+  /** Shipped as a bundled default (editable + toggleable, but not deletable). */
+  default?: boolean;
   /** Which native tool group a built-in maps to. */
   builtinKey?: "username" | "recon" | "exif" | "reverse_image";
   /** What Aether should pass as the free-form `input` argument. */

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useStore } from "../state/store";
 import type { ModuleConfig, ModuleSecret, ModuleHeader } from "../../shared/types";
-import { IPlus, ITrash, IEdit, IClose } from "./icons";
+import { IPlus, ITrash, IEdit, IClose, ISearch } from "./icons";
 
 const MODELS = [
   { id: "claude-opus-5", name: "Opus 5 — most capable" },
@@ -129,10 +129,16 @@ function ModulesPane() {
   const toggleModule = useStore((s) => s.toggleModule);
   const deleteModule = useStore((s) => s.deleteModule);
   const [editing, setEditing] = useState<ModuleConfig | null>(null);
+  const [showBundled, setShowBundled] = useState(false);
+  const [bundledFilter, setBundledFilter] = useState("");
 
   const builtins = modules.filter((m) => m.kind === "builtin");
-  const customs = modules.filter((m) => m.kind === "command" || m.kind === "http");
+  const bundled = modules.filter((m) => (m.kind === "command" || m.kind === "http") && m.default);
+  const customs = modules.filter((m) => (m.kind === "command" || m.kind === "http") && !m.default);
   const connectors = modules.filter((m) => m.kind === "connector");
+  const bundledOn = bundled.filter((m) => m.enabled).length;
+  const q = bundledFilter.trim().toLowerCase();
+  const bundledShown = q ? bundled.filter((m) => m.name.toLowerCase().includes(q) || m.description.toLowerCase().includes(q)) : bundled;
 
   const Row = (m: ModuleConfig) => (
     <div className={`module-row${m.enabled ? "" : " off"}`} key={m.id}>
@@ -148,7 +154,7 @@ function ModulesPane() {
         {(m.kind === "command" || m.kind === "http") && (
           <>
             <button className="mini-btn" title="Edit" onClick={() => setEditing(m)}><IEdit /></button>
-            <button className="mini-btn danger" title="Delete" onClick={() => void deleteModule(m.id)}><ITrash /></button>
+            {!m.default && <button className="mini-btn danger" title="Delete" onClick={() => void deleteModule(m.id)}><ITrash /></button>}
           </>
         )}
         {m.kind === "connector"
@@ -162,11 +168,28 @@ function ModulesPane() {
     <>
       <div className="field">
         <label>Modules</label>
-        <div className="desc">Capabilities Aether can reach for. Toggle the built-ins, or add your own — a local <b>command</b> she can run, or an <b>API</b> called with your keys. Each becomes a tool she'll use when its description fits.</div>
+        <div className="desc">Capabilities Aether can reach for. Toggle the built-ins and the bundled tools, or add your own — a local <b>command</b> she can run, or an <b>API</b> called with your keys. Each enabled one becomes a tool she'll use when its description fits.</div>
       </div>
 
       <div className="module-group-head"><span>Built-in</span></div>
       <div className="module-list">{builtins.map(Row)}</div>
+
+      <div className="module-group-head">
+        <span>Bundled tools · {bundledOn} of {bundled.length} on</span>
+        <button className="new-btn" onClick={() => setShowBundled((v) => !v)}>{showBundled ? "Hide" : "Show all"}</button>
+      </div>
+      <div className="desc" style={{ margin: "0 0 8px" }}>
+        Free, no-key OSINT and recon endpoints, plus wrappers for common CLI tools. The HTTP ones work out of the box; the command ones need the tool installed and autonomy on.
+      </div>
+      {showBundled && (
+        <>
+          <div className="hud-search glass" style={{ margin: "0 0 8px", maxWidth: "none" }}>
+            <ISearch size={14} />
+            <input placeholder="Filter bundled tools…" value={bundledFilter} onChange={(e) => setBundledFilter(e.target.value)} />
+          </div>
+          <div className="module-list">{bundledShown.map(Row)}</div>
+        </>
+      )}
 
       <div className="module-group-head">
         <span>Custom</span>

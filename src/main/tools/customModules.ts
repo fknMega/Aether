@@ -60,6 +60,11 @@ function httpTool(m: LiveModule & { toolName: string }, ctx: ToolContext): SdkTo
       const url = fillSecrets((m.url || "").replaceAll("{input}", encodeURIComponent(arg)), m.secretValues);
       const headers: Record<string, string> = {};
       for (const h of m.headers ?? []) if (h.name.trim()) headers[h.name.trim()] = fillSecrets(h.value ?? "", m.secretValues);
+      // Many public APIs reject a missing/blank UA (or throttle it); set a polite
+      // default when the module didn't specify one.
+      if (!Object.keys(headers).some((k) => k.toLowerCase() === "user-agent")) {
+        headers["User-Agent"] = "Aether-OSINT/1.0 (+https://github.com/fknMega/Aether)";
+      }
       const method = m.method === "POST" ? "POST" : "GET";
       const body = method === "POST" && m.body ? fillSecrets(m.body.replaceAll("{input}", arg), m.secretValues) : undefined;
       try {
