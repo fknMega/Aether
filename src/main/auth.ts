@@ -49,8 +49,12 @@ function searchExe(dir: string, exe: string, depth: number): string | null {
   return null;
 }
 
-/** Locate the `claude` binary the Agent SDK ships (in a per-OS/arch package). */
-function findClaudeBinary(): string | null {
+/** Locate the `claude` binary the Agent SDK ships (in a per-OS/arch package),
+ *  always returning a real, executable path (never one that runs through
+ *  app.asar). Exported so the turn runner can hand it to the SDK explicitly —
+ *  the SDK's own default resolution can pick the asar path and fail with
+ *  ENOTDIR when it spawns the CLI. */
+export function findClaudeBinary(): string | null {
   if (process.env.AETHER_CLAUDE_BIN && existsSync(process.env.AETHER_CLAUDE_BIN)) return process.env.AETHER_CLAUDE_BIN;
   const exe = process.platform === "win32" ? "claude.exe" : "claude";
   const platformPkg = `claude-agent-sdk-${process.platform}-${process.arch}`;

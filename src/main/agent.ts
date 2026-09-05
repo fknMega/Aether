@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { existsSync } from "node:fs";
 import { paths, runtime } from "./config";
 import { systemPrompt } from "./prompt";
+import { findClaudeBinary } from "./auth";
 import { buildToolServer } from "./tools";
 import type { ToolContext } from "./tools/context";
 import type { AetherSettings, AgentEvent, ToolActivity } from "../shared/types";
@@ -70,6 +71,9 @@ export async function* runTurn(
   const timeout = setTimeout(() => abort.abort(), runtime.turnTimeoutMs);
 
   const { server } = await toolServer(ctx);
+  // Point the SDK at the real, unpacked binary. Its own resolution can land on
+  // an app.asar path that the OS refuses to exec (ENOTDIR) in a packaged build.
+  const claudeBin = findClaudeBinary();
 
   // Correlate streamed tool_use blocks with their results so the UI can animate
   // each call from running -> ok/error.
@@ -96,6 +100,7 @@ export async function* runTurn(
         allowDangerouslySkipPermissions: true,
         ...(settings.autonomy ? {} : { disallowedTools: ["Bash", "Write", "Edit"] }),
         cwd: paths.workspace,
+        ...(claudeBin ? { pathToClaudeCodeExecutable: claudeBin } : {}),
         settingSources: [],
         plugins: existsSync(offsecPlugin.path) ? [offsecPlugin] : [],
         skills: existsSync(offsecPlugin.path) ? offsecSkills : [],
