@@ -140,9 +140,13 @@ npm run dist:win   # .exe installer, built on Windows
 
 Build each OS on that OS, since the `claude` binary ships as a per-platform package. Output lands in `release/`.
 
-**Auto-updates** are wired up through GitHub Releases (electron-updater). Publish a release with
-`GH_TOKEN=... npm run dist:mac -- --publish always`, and installed apps check for it on launch, download in the
-background, and offer to restart. On macOS this needs a signed (Developer ID) build; Windows updates fine as is.
+**Auto-updates** work on both Windows and macOS, and there's an Updates panel in Settings (check, status,
+install, auto-check toggle). Aether reads the latest [GitHub Release](https://github.com/fknMega/Aether/releases),
+downloads the build in the background, and installs it: on Windows it runs the new installer, and on macOS it
+swaps its own app bundle and relaunches (no code signature required, unlike the stock Electron updater). If the
+app lives somewhere it can't write, it falls back to opening the `.dmg` for a quick drag. To publish a build,
+create a Release with the `.dmg` / `.exe` assets attached (e.g. `gh release create v2.0.2 release/*` with a token
+that has `contents:write`).
 
 ## The security part, worth reading
 
