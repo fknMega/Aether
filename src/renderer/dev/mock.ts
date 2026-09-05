@@ -23,7 +23,14 @@ let settings: AetherSettings = {
   effort: "medium",
   personaVoice: "flirty",
   autonomy: true,
+  provider: "claude",
+  openaiBaseUrl: "https://api.openai.com/v1",
+  openaiModel: "gpt-4o",
+  ollamaBaseUrl: "http://localhost:11434/v1",
+  ollamaModel: "llama3.1",
 };
+
+let providerKeySet = false;
 
 const auth: AuthStatus = q.get("onboard")
   ? { loggedIn: false, authMethod: null, detail: "Run npm run login, or sign in here." }
@@ -251,6 +258,13 @@ const api: AetherApi = {
   deleteGraph: async () => true,
   sendChat: async (req) => { void simulateTurn(req); return { conversationId: req.conversationId ?? "c1" }; },
   cancelChat: async () => {},
+  providerStatus: async () => ({
+    provider: settings.provider,
+    hasKey: settings.provider === "openai" ? providerKeySet : true,
+    models: settings.provider === "ollama" ? ["llama3.1:latest", "qwen2.5:14b", "gemma4-uncensored-64k:latest"] : [],
+  }),
+  setProviderKey: async (_p, key) => { providerKeySet = !!key; return { provider: settings.provider, hasKey: settings.provider === "openai" ? providerKeySet : true, models: [] }; },
+
   listModules: async () => redactMods(),
   saveModule: async (mod) => {
     const idx = mods.findIndex((m) => m.id === mod.id);

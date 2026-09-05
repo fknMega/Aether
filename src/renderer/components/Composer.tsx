@@ -24,10 +24,26 @@ export function Composer() {
   const streaming = useStore((s) => !!s.stream);
   const send = useStore((s) => s.send);
   const cancel = useStore((s) => s.cancel);
-  const model = useStore((s) => s.settings?.model);
-  const effort = useStore((s) => s.settings?.effort);
+  const settings = useStore((s) => s.settings);
+  const providerStatus = useStore((s) => s.providerStatus);
+  const localModels = providerStatus?.models ?? [];
   const saveSettings = useStore((s) => s.saveSettings);
-  const modelOptions = MODELS.some((m) => m.id === model) || !model ? MODELS : [...MODELS, { id: model, label: model }];
+  const provider = settings?.provider ?? "claude";
+  const effort = settings?.effort;
+
+  // The picker follows the active provider: Claude presets, the local Ollama
+  // models we discovered, or whatever OpenAI model is configured.
+  const uniq = (xs: string[]) => [...new Set(xs.filter(Boolean))];
+  const current =
+    provider === "openai" ? (settings?.openaiModel ?? "gpt-4o")
+    : provider === "ollama" ? (settings?.ollamaModel ?? "llama3.1")
+    : (settings?.model ?? "claude-opus-5");
+  const modelOptions: Array<{ id: string; label: string }> =
+    provider === "claude"
+      ? (MODELS.some((m) => m.id === current) ? MODELS : [...MODELS, { id: current, label: current }])
+      : uniq(provider === "ollama" ? [current, ...localModels] : [current, "gpt-4o", "gpt-4o-mini", "o3-mini"]).map((m) => ({ id: m, label: m }));
+  const onPickModel = (v: string) =>
+    void saveSettings(provider === "openai" ? { openaiModel: v } : provider === "ollama" ? { ollamaModel: v } : { model: v });
 
   const grow = () => { const el = taRef.current; if (el) { el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 200) + "px"; } };
 
@@ -84,18 +100,20 @@ export function Composer() {
           </div>
         </div>
         <div className="composer-foot">
-          <label className="model-pick" title="Switch the Claude model">
+          <label className="model-pick" title={`Model (${provider})`}>
             <span className="dot" />
-            <select value={model ?? "claude-opus-5"} onChange={(e) => void saveSettings({ model: e.target.value })}>
+            <select value={current} onChange={(e) => onPickModel(e.target.value)}>
               {modelOptions.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
             </select>
           </label>
-          <label className="model-pick" title="Reasoning effort — higher digs deeper, lower is snappier">
-            <span className="pfx">effort</span>
-            <select value={effort ?? "medium"} onChange={(e) => void saveSettings({ effort: e.target.value as (typeof EFFORTS)[number] })}>
-              {EFFORTS.map((eff) => <option key={eff} value={eff}>{eff}</option>)}
-            </select>
-          </label>
+          {provider === "claude" && (
+            <label className="model-pick" title="Reasoning effort — higher digs deeper, lower is snappier">
+              <span className="pfx">effort</span>
+              <select value={effort ?? "medium"} onChange={(e) => void saveSettings({ effort: e.target.value as (typeof EFFORTS)[number] })}>
+                {EFFORTS.map((eff) => <option key={eff} value={eff}>{eff}</option>)}
+              </select>
+            </label>
+          )}
           <div className="hint">Enter to send · Shift+Enter for a new line</div>
         </div>
       </div>

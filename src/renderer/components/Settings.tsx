@@ -102,22 +102,91 @@ function GeneralPane() {
 function ModelPane() {
   const settings = useStore((s) => s.settings)!;
   const save = useStore((s) => s.saveSettings);
+  const status = useStore((s) => s.providerStatus);
+  const refreshStatus = useStore((s) => s.refreshProviderStatus);
+  const setProviderKey = useStore((s) => s.setProviderKey);
+  const [key, setKey] = useState("");
+  const provider = settings.provider ?? "claude";
+
+  const pick = async (p: typeof provider) => { await save({ provider: p }); void refreshStatus(); };
+
   return (
     <>
       <div className="field">
-        <label>Model</label>
-        <div className="desc">Which Claude model runs the investigation.</div>
-        <select defaultValue={settings.model} onChange={(e) => void save({ model: e.target.value })}>
-          {MODELS.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-        </select>
-      </div>
-      <div className="field">
-        <label>Reasoning effort</label>
-        <div className="desc">Higher digs deeper on hard cases; lower is snappier and cheaper.</div>
+        <label>Provider</label>
+        <div className="desc">Which brain runs the investigation. Claude uses your subscription through the Agent SDK. ChatGPT and Ollama talk to any OpenAI-compatible endpoint, and get the same tools and graph.</div>
         <div className="seg-pick">
-          {EFFORTS.map((e) => <button key={e} className={settings.effort === e ? "on" : ""} onClick={() => void save({ effort: e })}>{e}</button>)}
+          <button className={provider === "claude" ? "on" : ""} onClick={() => void pick("claude")}>Claude</button>
+          <button className={provider === "openai" ? "on" : ""} onClick={() => void pick("openai")}>ChatGPT</button>
+          <button className={provider === "ollama" ? "on" : ""} onClick={() => void pick("ollama")}>Ollama (local)</button>
         </div>
       </div>
+
+      {provider === "claude" && (
+        <>
+          <div className="field">
+            <label>Model</label>
+            <div className="desc">Which Claude model runs the investigation.</div>
+            <select defaultValue={settings.model} onChange={(e) => void save({ model: e.target.value })}>
+              {MODELS.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+          </div>
+          <div className="field">
+            <label>Reasoning effort</label>
+            <div className="desc">Higher digs deeper on hard cases; lower is snappier and cheaper.</div>
+            <div className="seg-pick">
+              {EFFORTS.map((e) => <button key={e} className={settings.effort === e ? "on" : ""} onClick={() => void save({ effort: e })}>{e}</button>)}
+            </div>
+          </div>
+        </>
+      )}
+
+      {provider === "openai" && (
+        <>
+          <div className="field">
+            <label>OpenAI API key</label>
+            <div className="desc">Stored encrypted on this machine (OS keychain) and never shown again or sent to the renderer.</div>
+            <div className="row-inline">
+              <input type="password" className="mono" placeholder={status?.hasKey ? "•••••••• (stored — type to replace)" : "sk-..."} value={key} onChange={(e) => setKey(e.target.value)} />
+              <button className="btn primary" onClick={async () => { await setProviderKey("openai", key); setKey(""); }}>Save</button>
+            </div>
+            {status?.hasKey && <div className="desc" style={{ marginTop: 8 }}>A key is stored. <button className="add-row" style={{ marginLeft: 6 }} onClick={() => void setProviderKey("openai", "")}>Remove it</button></div>}
+          </div>
+          <div className="field">
+            <label>Model</label>
+            <input type="text" className="mono" defaultValue={settings.openaiModel} onBlur={(e) => void save({ openaiModel: e.target.value.trim() })} placeholder="gpt-4o" />
+          </div>
+          <div className="field">
+            <label>Base URL</label>
+            <div className="desc">Point this at any OpenAI-compatible gateway (Azure, OpenRouter, a proxy) if you're not using OpenAI directly.</div>
+            <input type="text" className="mono" defaultValue={settings.openaiBaseUrl} onBlur={(e) => void save({ openaiBaseUrl: e.target.value.trim() })} placeholder="https://api.openai.com/v1" />
+          </div>
+        </>
+      )}
+
+      {provider === "ollama" && (
+        <>
+          <div className="field">
+            <label>Local model</label>
+            <div className="desc">
+              Runs entirely on your machine. Tool calling needs a tool-capable model (llama3.1, qwen2.5, mistral-nemo); models without tool support will still chat but can't drive the graph.
+            </div>
+            {status?.models?.length ? (
+              <select defaultValue={settings.ollamaModel} onChange={(e) => void save({ ollamaModel: e.target.value })}>
+                {status.models.map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+            ) : (
+              <input type="text" className="mono" defaultValue={settings.ollamaModel} onBlur={(e) => void save({ ollamaModel: e.target.value.trim() })} placeholder="llama3.1" />
+            )}
+            {status?.detail && <div className="desc" style={{ marginTop: 8, color: "var(--danger)" }}>{status.detail}</div>}
+          </div>
+          <div className="field">
+            <label>Base URL</label>
+            <input type="text" className="mono" defaultValue={settings.ollamaBaseUrl} onBlur={(e) => void save({ ollamaBaseUrl: e.target.value.trim() })} placeholder="http://localhost:11434/v1" />
+            <button className="add-row" style={{ marginTop: 8 }} onClick={() => void refreshStatus()}>Re-scan local models</button>
+          </div>
+        </>
+      )}
     </>
   );
 }

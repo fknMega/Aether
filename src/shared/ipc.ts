@@ -4,7 +4,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import type {
   AetherSettings, AuthStatus, ChatRequest, Conversation, Message,
-  CaseGraph, GraphCaseInfo, AgentEvent, ModuleConfig,
+  CaseGraph, GraphCaseInfo, AgentEvent, ModuleConfig, ProviderStatus, Provider,
 } from "./types";
 
 export const IPC = {
@@ -12,6 +12,9 @@ export const IPC = {
   settingsSet: "settings:set",
   authStatus: "auth:status",
   authLogin: "auth:login",
+
+  providerStatus: "provider:status",
+  providerSetKey: "provider:setKey",
 
   modulesList: "modules:list",
   moduleSave: "modules:save",
@@ -66,6 +69,11 @@ export interface AetherApi {
 
   authStatus(): Promise<AuthStatus>;
   authLogin(): Promise<{ ok: boolean; message: string }>;
+
+  /** Provider readiness: whether a key is stored, and any listable models. */
+  providerStatus(): Promise<ProviderStatus>;
+  /** Store (or clear, with "") an API key for a provider. Never read back. */
+  setProviderKey(provider: Provider, key: string): Promise<ProviderStatus>;
 
   /** Modules (secrets redacted — values never leave the main process). */
   listModules(): Promise<ModuleConfig[]>;

@@ -44,6 +44,12 @@ const DEFAULT_SETTINGS: AetherSettings = {
   effort: (process.env.AETHER_EFFORT as AetherSettings["effort"]) ?? "medium",
   personaVoice: "flirty",
   autonomy: true,
+
+  provider: (process.env.AETHER_PROVIDER as AetherSettings["provider"]) ?? "claude",
+  openaiBaseUrl: process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1",
+  openaiModel: process.env.OPENAI_MODEL ?? "gpt-4o",
+  ollamaBaseUrl: process.env.OLLAMA_BASE_URL ?? "http://localhost:11434/v1",
+  ollamaModel: process.env.OLLAMA_MODEL ?? "llama3.1",
 };
 
 export const paths = {

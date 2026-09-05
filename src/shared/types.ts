@@ -109,12 +109,34 @@ export type AgentEvent =
 
 // ── Settings ─────────────────────────────────────────────────────────────────
 
+/** Which brain runs the turn. `claude` uses the Agent SDK; `openai` and `ollama`
+ *  both speak the OpenAI-compatible /chat/completions API with tool calling. */
+export type Provider = "claude" | "openai" | "ollama";
+
 export interface AetherSettings {
   ownerName: string;
   model: string;
   effort: "low" | "medium" | "high" | "xhigh" | "max";
   personaVoice: "flirty" | "professional";
   autonomy: boolean;
+
+  provider: Provider;
+  /** OpenAI-compatible endpoint + model (ChatGPT, or any compatible gateway). */
+  openaiBaseUrl: string;
+  openaiModel: string;
+  /** Local Ollama endpoint + model. */
+  ollamaBaseUrl: string;
+  ollamaModel: string;
+}
+
+/** Whether a provider is ready to run (key present / endpoint reachable). */
+export interface ProviderStatus {
+  provider: Provider;
+  /** True when an API key is stored for this provider (value never leaves main). */
+  hasKey: boolean;
+  /** Models discovered from the provider, when it can be listed (Ollama). */
+  models: string[];
+  detail?: string;
 }
 
 export interface AuthStatus {

@@ -12,6 +12,9 @@ const api: AetherApi = {
   authStatus: () => ipcRenderer.invoke(IPC.authStatus),
   authLogin: () => ipcRenderer.invoke(IPC.authLogin),
 
+  providerStatus: () => ipcRenderer.invoke(IPC.providerStatus),
+  setProviderKey: (provider, key) => ipcRenderer.invoke(IPC.providerSetKey, provider, key),
+
   listModules: () => ipcRenderer.invoke(IPC.modulesList),
   saveModule: (mod) => ipcRenderer.invoke(IPC.moduleSave, mod),
   deleteModule: (id) => ipcRenderer.invoke(IPC.moduleDelete, id),

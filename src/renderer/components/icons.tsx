@@ -19,3 +19,9 @@ export const IZoomIn = ({ size = 15, className }: P) => S(size, <><circle cx="11
 export const IZoomOut = ({ size = 15, className }: P) => S(size, <><circle cx="11" cy="11" r="7"/><path d="M8 11h6M21 21l-4.3-4.3"/></>, className);
 export const IFit = ({ size = 15, className }: P) => S(size, <><path d="M4 9V5a1 1 0 0 1 1-1h4M20 9V5a1 1 0 0 0-1-1h-4M4 15v4a1 1 0 0 0 1 1h4M20 15v4a1 1 0 0 1-1 1h-4"/></>, className);
 export const ISpark = ({ size = 16, className }: P) => S(size, <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" />, className);
+export const IDiscord = ({ size = 16, className }: P) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
+    <path d="M19.6 5.3A17.3 17.3 0 0 0 15.4 4l-.2.4a12 12 0 0 1 3.7 1.9 15.4 15.4 0 0 0-10.6-.1A12 12 0 0 1 12 4.3L11.8 4a17.3 17.3 0 0 0-4.2 1.3C5 9 4.3 12.7 4.6 16.3a17.6 17.6 0 0 0 5.3 2.7l.9-1.5c-.8-.3-1.5-.7-2.1-1.1l.5-.4a13 13 0 0 0 11.1 0l.5.4c-.6.4-1.3.8-2.1 1.1l.9 1.5a17.6 17.6 0 0 0 5.3-2.7c.4-4.2-.7-7.9-3.3-11ZM9.8 14.4c-1 0-1.9-.9-1.9-2.1 0-1.2.8-2.1 1.9-2.1s1.9 1 1.9 2.1c0 1.2-.8 2.1-1.9 2.1Zm4.4 0c-1 0-1.9-.9-1.9-2.1 0-1.2.8-2.1 1.9-2.1s1.9 1 1.9 2.1c0 1.2-.8 2.1-1.9 2.1Z"/>
+  </svg>
+);
+export const IHeart = ({ size = 16, className }: P) => S(size, <path d="M20.8 6.6a5 5 0 0 0-7.1 0L12 8.3l-1.7-1.7a5 5 0 1 0-7.1 7.1L12 22.4l8.8-8.7a5 5 0 0 0 0-7.1z" />, className);

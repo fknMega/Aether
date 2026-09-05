@@ -41,7 +41,10 @@ async function loadPrivateConnectors(ctx: ToolContext): Promise<{ tools: SdkTool
   return { tools, names };
 }
 
-export async function buildToolServer(ctx: ToolContext) {
+/** Every tool Aether can call, as plain SDK tool objects. Used directly by the
+ *  OpenAI-compatible engine (ChatGPT / Ollama), and wrapped in an MCP server for
+ *  the Claude Agent SDK. */
+export async function buildToolList(ctx: ToolContext): Promise<{ tools: SdkTool[]; privateToolNames: string[] }> {
   // time + graph are core (always on). The rest are gated by their module toggle.
   const builtIn: SdkTool[] = [
     ...timeTools(ctx),
@@ -52,10 +55,14 @@ export async function buildToolServer(ctx: ToolContext) {
     ...(modules.isBuiltinEnabled("reverse_image") ? imageTools() : []),
     ...buildModuleTools(ctx),
   ];
-
   const priv = await loadPrivateConnectors(ctx);
   modules.setConnectorNames(priv.names.filter((n) => n && n !== "?"));
   if (priv.names.length) console.log(`[aether] loaded private connector tools: ${priv.names.join(", ")}`);
+  return { tools: [...builtIn, ...priv.tools], privateToolNames: priv.names };
+}
+
+export async function buildToolServer(ctx: ToolContext) {
+  const { tools, privateToolNames } = await buildToolList(ctx);
 
   const server = createSdkMcpServer({
     name: "aether",
@@ -65,8 +72,8 @@ export async function buildToolServer(ctx: ToolContext) {
       "the primary workspace, updated as selectors are found and resolved. username_search hunts a handle " +
       "across platforms; dns_lookup/whois/http_probe do infrastructure recon; exif_read pulls image " +
       "metadata; reverse_image_urls builds reverse-image searches.",
-    tools: [...builtIn, ...priv.tools],
+    tools,
   });
 
-  return { server, privateToolNames: priv.names };
+  return { server, privateToolNames };
 }

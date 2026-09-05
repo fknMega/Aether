@@ -168,6 +168,8 @@ button, input, textarea, select { font-family: inherit; color: inherit; }
 .icon-btn { -webkit-app-region: no-drag; border: 0; background: transparent; color: var(--ink-3); width: 30px; height: 30px; border-radius: var(--r-sm); cursor: pointer; display: grid; place-items: center; transition: var(--t-fast); }
 .icon-btn:hover { color: var(--ink); background: var(--paper-2); }
 .icon-btn.active { color: var(--ink); }
+.icon-btn.discord:hover { color: #7d8cff; background: rgba(125,140,255,0.10); }
+.icon-btn.sponsor:hover { color: var(--ember); background: var(--ember-tint); }
 
 /* ── body layout ───────────────────────────────────────────────────────────── */
 .body { display: grid; grid-template-columns: 268px 1fr; grid-template-rows: minmax(0, 1fr); min-height: 0; }

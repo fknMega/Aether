@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type {
   AetherSettings, AuthStatus, Conversation, Message, ToolActivity,
-  GraphCaseInfo, CaseGraph, OutboundImage, ModuleConfig,
+  GraphCaseInfo, CaseGraph, OutboundImage, ModuleConfig, ProviderStatus, Provider,
 } from "../../shared/types";
 import type { ChatEventEnvelope } from "../../shared/ipc";
 
@@ -33,12 +33,16 @@ interface Store {
   graph: CaseGraph | null;
 
   modules: ModuleConfig[];
+  providerStatus: ProviderStatus | null;
 
   init(): Promise<void>;
   setView(v: View): void;
   dismissAuthGate(): void;
   refreshAuth(): Promise<void>;
   saveSettings(patch: Partial<AetherSettings>): Promise<void>;
+
+  refreshProviderStatus(): Promise<void>;
+  setProviderKey(provider: Provider, key: string): Promise<void>;
 
   refreshModules(): Promise<void>;
   saveModule(mod: ModuleConfig): Promise<void>;
@@ -77,18 +81,23 @@ export const useStore = create<Store>((set, get) => ({
   activeCaseId: null,
   graph: null,
   modules: [],
+  providerStatus: null,
 
   async init() {
     const [settings, auth, conversations, cases, modules] = await Promise.all([
       A.getSettings(), A.authStatus(), A.listConversations(), A.listGraphCases(), A.listModules(),
     ]);
     set({ settings, auth, conversations, cases, modules });
+    void get().refreshProviderStatus();
   },
 
   setView(v) { set({ view: v }); },
   dismissAuthGate() { set({ dismissedAuthGate: true }); },
   async refreshAuth() { set({ auth: await A.authStatus() }); },
   async saveSettings(patch) { set({ settings: await A.setSettings(patch) }); },
+
+  async refreshProviderStatus() { set({ providerStatus: await A.providerStatus() }); },
+  async setProviderKey(provider, key) { set({ providerStatus: await A.setProviderKey(provider, key) }); },
 
   async refreshModules() { set({ modules: await A.listModules() }); },
   async saveModule(mod) { set({ modules: await A.saveModule(mod) }); },

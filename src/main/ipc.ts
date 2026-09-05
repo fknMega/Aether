@@ -6,10 +6,12 @@ import { paths, runtime, loadSettings } from "./config";
 import { store } from "./store";
 import { modules } from "./modules";
 import { runTurn, resetToolServer } from "./agent";
+import { runChatTurn, listOllamaModels } from "./chatEngine";
+import { secrets, OPENAI_KEY } from "./secrets";
 import { decodeImages, writeAttachments, attachedImagesBlock } from "./images";
 import { authStatus, authLogin } from "./auth";
 import type { ToolContext } from "./tools/context";
-import type { AetherSettings, ChatRequest, ModuleConfig } from "../shared/types";
+import type { AetherSettings, ChatRequest, ModuleConfig, Provider, ProviderStatus } from "../shared/types";
 
 let settings: AetherSettings = loadSettings();
 const activeTurns = new Map<string, AbortController>();
@@ -48,6 +50,10 @@ function sanitizeSettings(patch: Partial<AetherSettings>): Partial<AetherSetting
   if (["low", "medium", "high", "xhigh", "max"].includes(patch.effort as string)) out.effort = patch.effort;
   if (patch.personaVoice === "flirty" || patch.personaVoice === "professional") out.personaVoice = patch.personaVoice;
   if (typeof patch.autonomy === "boolean") out.autonomy = patch.autonomy;
+  if (["claude", "openai", "ollama"].includes(patch.provider as string)) out.provider = patch.provider;
+  for (const k of ["openaiBaseUrl", "openaiModel", "ollamaBaseUrl", "ollamaModel"] as const) {
+    if (typeof patch[k] === "string") out[k] = (patch[k] as string).slice(0, 300);
+  }
   return out;
 }
 
@@ -61,7 +67,11 @@ async function startTurn(req: ChatRequest, conversationId: string, prompt: strin
   let cost: number | null = null;
   let failed = false;
   try {
-    for await (const event of runTurn(prompt, resumeId, settings, toolCtx, abort.signal)) {
+    const prior = settings.provider === "claude" ? [] : store.listMessages(conversationId).slice(0, -1);
+    const stream = settings.provider === "claude"
+      ? runTurn(prompt, resumeId, settings, toolCtx, abort.signal)
+      : runChatTurn(prompt, prior, settings, toolCtx, abort.signal);
+    for await (const event of stream) {
       if (event.type === "session") { store.setClaudeSessionId(conversationId, event.claudeSessionId); continue; }
       if (event.type === "done") { finalText = event.text; cost = event.costUsd; }
       if (event.type === "error") failed = true;
@@ -84,6 +94,16 @@ async function startTurn(req: ChatRequest, conversationId: string, prompt: strin
   }
 }
 
+async function providerStatus(): Promise<ProviderStatus> {
+  const models = settings.provider === "ollama" ? await listOllamaModels(settings.ollamaBaseUrl) : [];
+  return {
+    provider: settings.provider,
+    hasKey: settings.provider === "openai" ? secrets.has(OPENAI_KEY) : true,
+    models,
+    detail: settings.provider === "ollama" && !models.length ? "No local models found. Is `ollama serve` running?" : undefined,
+  };
+}
+
 export function registerIpc(): void {
   ipcMain.handle(IPC.settingsGet, () => settings);
   ipcMain.handle(IPC.settingsSet, (_e, patch: Partial<AetherSettings>) => {
@@ -94,6 +114,12 @@ export function registerIpc(): void {
 
   ipcMain.handle(IPC.authStatus, () => authStatus());
   ipcMain.handle(IPC.authLogin, () => authLogin());
+
+  ipcMain.handle(IPC.providerStatus, () => providerStatus());
+  ipcMain.handle(IPC.providerSetKey, async (_e, provider: Provider, key: string) => {
+    if (provider === "openai") secrets.set(OPENAI_KEY, typeof key === "string" ? key.trim() : "");
+    return providerStatus();
+  });
 
   ipcMain.handle(IPC.modulesList, () => modules.list());
   ipcMain.handle(IPC.moduleSave, (_e, mod: ModuleConfig) => afterModuleChange(modules.save(mod)));
