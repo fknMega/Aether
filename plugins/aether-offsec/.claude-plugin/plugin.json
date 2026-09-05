@@ -1,0 +1,5 @@
+{
+  "name": "aether-offsec",
+  "version": "1.0.0",
+  "description": "Offensive-security playbooks for Aether: authorized lab and CTF engagements (HackTheBox, owned infrastructure). Network recon, web enumeration, foothold, privilege escalation, and password attacks."
+}

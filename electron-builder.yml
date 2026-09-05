@@ -1,0 +1,34 @@
+appId: dev.aether.app
+productName: Aether
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**/*
+  - plugins/**/*
+  - resources/**/*
+  - package.json
+# The Agent SDK ships a native `claude` binary — it must stay outside the asar
+# archive so it remains executable at runtime.
+asarUnpack:
+  - "**/node_modules/@anthropic-ai/**"
+extraResources:
+  - from: plugins
+    to: plugins
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - dmg
+    - zip
+  hardenedRuntime: true
+  gatekeeperAssess: false
+win:
+  target:
+    - nsis
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+linux:
+  target:
+    - AppImage
+  category: Utility

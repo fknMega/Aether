@@ -1,0 +1,29 @@
+# ── dependencies / build output ──
+node_modules/
+dist/
+out/
+release/
+*.log
+
+# ── local state ──
+workspace/
+.aether-token
+data/
+
+# ── PRIVATE — never publish ──
+# Licensed breach connector, account-recovery doctrine, secrets, and the old
+# pre-rebuild code all live here and stay off GitHub.
+private/
+.env
+.env.*
+!.env.example
+
+# ── os / editor cruft ──
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# TypeScript incremental build info
+*.tsbuildinfo
