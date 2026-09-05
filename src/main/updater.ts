@@ -14,10 +14,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { app, shell } from "electron";
 import { spawn } from "node:child_process";
-import { createWriteStream, mkdtempSync, writeFileSync, chmodSync, accessSync, constants } from "node:fs";
+import { createWriteStream, mkdtempSync, writeFileSync, chmodSync } from "node:fs";
 import { Readable } from "node:stream";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
+import { join } from "node:path";
 import type { UpdateStatus } from "../shared/types";
 
 const REPO = "fknMega/Aether";
@@ -113,47 +113,63 @@ function applyWin(installer: string): void {
   setTimeout(() => app.quit(), 400);
 }
 
-/** Mount the dmg, replace this app bundle with the new one after we quit, and
- *  relaunch. If the app's folder isn't writable (e.g. /Applications needs admin)
- *  the script safely restores and just opens the dmg for a manual drag. */
+/** Install on macOS: after we quit, stage the new bundle from the dmg and swap
+ *  it into place — directly if the app folder is writable, otherwise via one
+ *  admin prompt (for /Applications). Then relaunch. If anything fails it just
+ *  opens the dmg for a manual drag and never relaunches the OLD version, so it
+ *  can't get stuck in a re-check loop. Everything is logged to
+ *  ~/aether-update.log for diagnosis. */
 function applyMac(dmg: string): void {
   const appBundle = process.execPath.replace(/\/Contents\/MacOS\/[^/]+$/, "");
-  // If we plainly can't write the app's parent, skip the risky swap.
-  let writable = true;
-  try { accessSync(dirname(appBundle), constants.W_OK); } catch { writable = false; }
-  if (!writable) { void shell.openPath(dmg); return; }
-
+  const swapDir = mkdtempSync(join(tmpdir(), "aether-swap-"));
+  const sp = join(swapDir, "swap.sh");
+  const log = join(app.getPath("home"), "aether-update.log");
   const script = `#!/bin/bash
-set -o pipefail
 DMG=${sh(dmg)}
 APP=${sh(appBundle)}
 PID=${process.pid}
+exec >>${sh(log)} 2>&1
+echo "[aether-update] $(date) installing into $APP"
 MNT="$(/usr/bin/mktemp -d)"
-if ! /usr/bin/hdiutil attach "$DMG" -nobrowse -noverify -mountpoint "$MNT" >/dev/null 2>&1; then /usr/bin/open "$DMG"; exit 0; fi
+if ! /usr/bin/hdiutil attach "$DMG" -nobrowse -noverify -mountpoint "$MNT" >/dev/null 2>&1; then echo "attach failed"; /usr/bin/open "$DMG"; exit 0; fi
 NEW="$(/usr/bin/find "$MNT" -maxdepth 1 -name '*.app' | /usr/bin/head -1)"
-if [ -z "$NEW" ]; then /usr/bin/hdiutil detach "$MNT" >/dev/null 2>&1; /usr/bin/open "$DMG"; exit 0; fi
-for i in $(/usr/bin/seq 1 75); do /bin/kill -0 "$PID" 2>/dev/null || break; /bin/sleep 0.4; done
-/bin/sleep 0.6
-BAK="$APP.bak-$$"
+if [ -z "$NEW" ]; then echo "no .app on dmg"; /usr/bin/hdiutil detach "$MNT" >/dev/null 2>&1; /usr/bin/open "$DMG"; exit 0; fi
+STAGE="$(/usr/bin/mktemp -d)"
+/usr/bin/ditto "$NEW" "$STAGE/New.app"
+/usr/bin/hdiutil detach "$MNT" >/dev/null 2>&1
+# wait for the running app to fully exit
+for i in $(/usr/bin/seq 1 90); do /bin/kill -0 "$PID" 2>/dev/null || break; /bin/sleep 0.4; done
+/bin/sleep 0.8
+# a downgrade-safe swap: keep the old aside, put the new in, restore on failure
+BAK="$APP.old-$$"
 if /bin/mv "$APP" "$BAK" 2>/dev/null; then
-  if /usr/bin/ditto "$NEW" "$APP" >/dev/null 2>&1; then
-    /usr/bin/xattr -cr "$APP" >/dev/null 2>&1
-    /bin/rm -rf "$BAK"
+  if /usr/bin/ditto "$STAGE/New.app" "$APP" >/dev/null 2>&1; then
+    /usr/bin/xattr -cr "$APP" >/dev/null 2>&1; /bin/rm -rf "$BAK"; echo "swapped (direct)"
   else
-    /bin/rm -rf "$APP" 2>/dev/null; /bin/mv "$BAK" "$APP" 2>/dev/null
+    /bin/rm -rf "$APP" 2>/dev/null; /bin/mv "$BAK" "$APP" 2>/dev/null; echo "ditto failed, restored"; /usr/bin/open "$STAGE/New.app"; exit 0
   fi
 else
-  /usr/bin/hdiutil detach "$MNT" >/dev/null 2>&1; /usr/bin/open "$DMG"; exit 0
+  # not writable (e.g. /Applications) — do the swap as admin, one password prompt
+  echo "needs admin, prompting"
+  /bin/cat > "$STAGE/doswap.sh" <<EOF2
+#!/bin/bash
+/bin/rm -rf "$APP" && /usr/bin/ditto "$STAGE/New.app" "$APP" && /usr/bin/xattr -cr "$APP"
+EOF2
+  /bin/chmod +x "$STAGE/doswap.sh"
+  if ! /usr/bin/osascript -e 'do shell script ("/bin/bash " & quoted form of "'"$STAGE"'/doswap.sh") with administrator privileges' >/dev/null 2>&1; then
+    echo "admin swap declined/failed"; /usr/bin/open "$STAGE/New.app"; exit 0
+  fi
+  echo "swapped (admin)"
 fi
-/usr/bin/hdiutil detach "$MNT" >/dev/null 2>&1
+/bin/sleep 0.4
 /usr/bin/open "$APP"
-/bin/rm -rf "$MNT" "$(/usr/bin/dirname "$DMG")" 2>/dev/null
+/bin/rm -rf "$STAGE" "$(/usr/bin/dirname "$DMG")" 2>/dev/null
+echo "[aether-update] done"
 `;
-  const sp = join(mkdtempSync(join(tmpdir(), "aether-swap-")), "swap.sh");
   writeFileSync(sp, script, "utf8");
   chmodSync(sp, 0o755);
   spawn("/bin/bash", [sp], { detached: true, stdio: "ignore" }).unref();
-  setTimeout(() => app.quit(), 400);
+  setTimeout(() => app.quit(), 500);
 }
 
 /** POSIX single-quote a path for safe embedding in the shell script. */
