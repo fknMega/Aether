@@ -1,7 +1,6 @@
 import { app, BrowserWindow, shell, nativeTheme } from "electron";
 import { join } from "node:path";
 import { registerIpc } from "./ipc";
-import { initAutoUpdate } from "./updater";
 
 const isDev = !app.isPackaged;
 
@@ -64,7 +63,6 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     registerIpc();
     createWindow();
-    initAutoUpdate();
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });

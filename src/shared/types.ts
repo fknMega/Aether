@@ -127,6 +127,18 @@ export interface AetherSettings {
   /** Local Ollama endpoint + model. */
   ollamaBaseUrl: string;
   ollamaModel: string;
+
+  /** Check for app updates on launch. */
+  autoUpdate: boolean;
+}
+
+/** Live state of the auto-updater, surfaced in Settings. */
+export interface UpdateStatus {
+  state: "disabled" | "idle" | "checking" | "not-available" | "available" | "downloading" | "downloaded" | "error";
+  currentVersion: string;
+  newVersion?: string;
+  percent?: number;
+  message?: string;
 }
 
 /** Whether a provider is ready to run (key present / endpoint reachable). */

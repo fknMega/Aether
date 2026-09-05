@@ -12,6 +12,10 @@ const api: AetherApi = {
   authStatus: () => ipcRenderer.invoke(IPC.authStatus),
   authLogin: () => ipcRenderer.invoke(IPC.authLogin),
 
+  updateStatusGet: () => ipcRenderer.invoke(IPC.updateGet),
+  checkForUpdate: () => ipcRenderer.invoke(IPC.updateCheck),
+  installUpdate: () => ipcRenderer.invoke(IPC.updateInstall),
+
   providerStatus: () => ipcRenderer.invoke(IPC.providerStatus),
   setProviderKey: (provider, key) => ipcRenderer.invoke(IPC.providerSetKey, provider, key),
 
@@ -53,6 +57,11 @@ const api: AetherApi = {
     const h = () => cb();
     ipcRenderer.on(IPC.modulesChanged, h);
     return () => ipcRenderer.removeListener(IPC.modulesChanged, h);
+  },
+  onUpdateStatus: (cb) => {
+    const h = (_e: unknown, s: Parameters<typeof cb>[0]) => cb(s);
+    ipcRenderer.on(IPC.updateStatus, h);
+    return () => ipcRenderer.removeListener(IPC.updateStatus, h);
   },
 };
 

@@ -19,6 +19,7 @@ export function App() {
   const refreshConversations = useStore((s) => s.refreshConversations);
   const reloadActiveMessages = useStore((s) => s.reloadActiveMessages);
   const refreshModules = useStore((s) => s.refreshModules);
+  const setUpdateStatus = useStore((s) => s.setUpdateStatus);
 
   useEffect(() => {
     document.documentElement.dataset.platform = window.aether.platform;
@@ -27,7 +28,8 @@ export function App() {
     const off2 = window.aether.onGraphChanged(() => { void refreshCases(); void refreshActiveGraph(); });
     const off3 = window.aether.onConversationsChanged(() => { void refreshConversations(); void reloadActiveMessages(); });
     const off4 = window.aether.onModulesChanged(() => { void refreshModules(); });
-    return () => { off1(); off2(); off3(); off4(); };
+    const off5 = window.aether.onUpdateStatus((st) => setUpdateStatus(st));
+    return () => { off1(); off2(); off3(); off4(); off5(); };
   }, []);
 
   const showRail = view === "chat" || view === "graph";

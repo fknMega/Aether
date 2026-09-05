@@ -401,12 +401,60 @@ function ModuleEditor({ initial, onClose }: { initial: ModuleConfig; onClose: ()
   );
 }
 
+const UPDATE_LABEL: Record<string, string> = {
+  disabled: "Updates run on an installed build",
+  idle: "Ready to check",
+  checking: "Checking for updates…",
+  "not-available": "You're on the latest version",
+  available: "Update found",
+  downloading: "Downloading update…",
+  downloaded: "Update ready to install",
+  error: "Couldn't check for updates",
+};
+
+function UpdatesCard() {
+  const status = useStore((s) => s.updateStatus);
+  const check = useStore((s) => s.checkForUpdate);
+  const install = useStore((s) => s.installUpdate);
+  const refresh = useStore((s) => s.refreshUpdateStatus);
+  const save = useStore((s) => s.saveSettings);
+  const autoUpdate = useStore((s) => s.settings?.autoUpdate ?? true);
+  useEffect(() => { void refresh(); }, []);
+
+  const state = status?.state ?? "idle";
+  const dotClass = state === "downloaded" || state === "available" ? "ok" : state === "error" ? "bad" : "";
+  const line = state === "downloading" && status?.percent != null ? `Downloading update… ${status.percent}%`
+    : (status?.message || UPDATE_LABEL[state] || "");
+
+  return (
+    <div className="field">
+      <label>Updates</label>
+      <div className="desc">Aether updates itself from GitHub Releases. New builds download in the background and install on restart.</div>
+      <div className="auth-row" style={{ flexWrap: "wrap" }}>
+        <span className={`dot-status ${dotClass}`} />
+        <div style={{ flex: 1, minWidth: 180 }}>
+          <div style={{ fontWeight: 600, fontSize: 14 }}>Version {status?.currentVersion ?? ""}{status?.newVersion && state !== "not-available" ? ` → ${status.newVersion}` : ""}</div>
+          <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{line}</div>
+        </div>
+        {state === "downloaded"
+          ? <button className="btn primary" onClick={() => void install()}>Restart & install</button>
+          : <button className="btn ghost" disabled={state === "checking" || state === "downloading" || state === "disabled"} onClick={() => void check()}>{state === "checking" ? "Checking…" : "Check now"}</button>}
+      </div>
+      <div className="toggle" style={{ marginTop: 12 }}>
+        <div>Check for updates automatically on launch</div>
+        <div className={`switch${autoUpdate ? " on" : ""}`} onClick={() => void save({ autoUpdate: !autoUpdate })}><div className="knob" /></div>
+      </div>
+    </div>
+  );
+}
+
 function AboutPane() {
   return (
     <>
+      <UpdatesCard />
       <div className="field">
         <label>Aether</label>
-        <div className="desc">A desktop agent that works a live knowledge graph — OSINT & authorized security research, driven by Claude.</div>
+        <div className="desc">A desktop agent that works a live knowledge graph — OSINT & authorized security research, driven by Claude, ChatGPT, or a local model.</div>
       </div>
       <div className="field">
         <label>Security</label>

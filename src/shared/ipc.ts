@@ -4,7 +4,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import type {
   AetherSettings, AuthStatus, ChatRequest, Conversation, Message,
-  CaseGraph, GraphCaseInfo, AgentEvent, ModuleConfig, ProviderStatus, Provider,
+  CaseGraph, GraphCaseInfo, AgentEvent, ModuleConfig, ProviderStatus, Provider, UpdateStatus,
 } from "./types";
 
 export const IPC = {
@@ -12,6 +12,10 @@ export const IPC = {
   settingsSet: "settings:set",
   authStatus: "auth:status",
   authLogin: "auth:login",
+
+  updateGet: "update:get",
+  updateCheck: "update:check",
+  updateInstall: "update:install",
 
   providerStatus: "provider:status",
   providerSetKey: "provider:setKey",
@@ -40,6 +44,7 @@ export const IPC = {
   graphChanged: "graph:changed",
   conversationsChanged: "conversations:changed",
   modulesChanged: "modules:changed",
+  updateStatus: "update:status",
 } as const;
 
 export interface ConversationDetail {
@@ -69,6 +74,11 @@ export interface AetherApi {
 
   authStatus(): Promise<AuthStatus>;
   authLogin(): Promise<{ ok: boolean; message: string }>;
+
+  /** App auto-update. */
+  updateStatusGet(): Promise<UpdateStatus>;
+  checkForUpdate(): Promise<UpdateStatus>;
+  installUpdate(): Promise<void>;
 
   /** Provider readiness: whether a key is stored, and any listable models. */
   providerStatus(): Promise<ProviderStatus>;
@@ -100,4 +110,5 @@ export interface AetherApi {
   onGraphChanged(cb: (payload: { caseName: string }) => void): () => void;
   onConversationsChanged(cb: () => void): () => void;
   onModulesChanged(cb: () => void): () => void;
+  onUpdateStatus(cb: (s: UpdateStatus) => void): () => void;
 }

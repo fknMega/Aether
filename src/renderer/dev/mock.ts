@@ -28,6 +28,7 @@ let settings: AetherSettings = {
   openaiModel: "gpt-4o",
   ollamaBaseUrl: "http://localhost:11434/v1",
   ollamaModel: "llama3.1",
+  autoUpdate: true,
 };
 
 let providerKeySet = false;
@@ -258,6 +259,11 @@ const api: AetherApi = {
   deleteGraph: async () => true,
   sendChat: async (req) => { void simulateTurn(req); return { conversationId: req.conversationId ?? "c1" }; },
   cancelChat: async () => {},
+  updateStatusGet: async () => ({ state: "not-available", currentVersion: "2.0.1", message: "You're on the latest version." }),
+  checkForUpdate: async () => ({ state: "not-available", currentVersion: "2.0.1", message: "You're on the latest version." }),
+  installUpdate: async () => {},
+  onUpdateStatus: () => () => {},
+
   providerStatus: async () => ({
     provider: settings.provider,
     hasKey: settings.provider === "openai" ? providerKeySet : true,

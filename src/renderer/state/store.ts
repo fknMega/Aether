@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type {
   AetherSettings, AuthStatus, Conversation, Message, ToolActivity,
-  GraphCaseInfo, CaseGraph, OutboundImage, ModuleConfig, ProviderStatus, Provider,
+  GraphCaseInfo, CaseGraph, OutboundImage, ModuleConfig, ProviderStatus, Provider, UpdateStatus,
 } from "../../shared/types";
 import type { ChatEventEnvelope } from "../../shared/ipc";
 
@@ -34,6 +34,7 @@ interface Store {
 
   modules: ModuleConfig[];
   providerStatus: ProviderStatus | null;
+  updateStatus: UpdateStatus | null;
 
   init(): Promise<void>;
   setView(v: View): void;
@@ -43,6 +44,11 @@ interface Store {
 
   refreshProviderStatus(): Promise<void>;
   setProviderKey(provider: Provider, key: string): Promise<void>;
+
+  refreshUpdateStatus(): Promise<void>;
+  checkForUpdate(): Promise<void>;
+  installUpdate(): Promise<void>;
+  setUpdateStatus(s: UpdateStatus): void;
 
   refreshModules(): Promise<void>;
   saveModule(mod: ModuleConfig): Promise<void>;
@@ -82,6 +88,7 @@ export const useStore = create<Store>((set, get) => ({
   graph: null,
   modules: [],
   providerStatus: null,
+  updateStatus: null,
 
   async init() {
     const [settings, auth, conversations, cases, modules] = await Promise.all([
@@ -89,6 +96,7 @@ export const useStore = create<Store>((set, get) => ({
     ]);
     set({ settings, auth, conversations, cases, modules });
     void get().refreshProviderStatus();
+    void get().refreshUpdateStatus();
   },
 
   setView(v) { set({ view: v }); },
@@ -98,6 +106,11 @@ export const useStore = create<Store>((set, get) => ({
 
   async refreshProviderStatus() { set({ providerStatus: await A.providerStatus() }); },
   async setProviderKey(provider, key) { set({ providerStatus: await A.setProviderKey(provider, key) }); },
+
+  async refreshUpdateStatus() { set({ updateStatus: await A.updateStatusGet() }); },
+  async checkForUpdate() { set({ updateStatus: await A.checkForUpdate() }); },
+  async installUpdate() { await A.installUpdate(); },
+  setUpdateStatus(s) { set({ updateStatus: s }); },
 
   async refreshModules() { set({ modules: await A.listModules() }); },
   async saveModule(mod) { set({ modules: await A.saveModule(mod) }); },

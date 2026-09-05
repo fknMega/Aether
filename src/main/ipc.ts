@@ -7,6 +7,7 @@ import { store } from "./store";
 import { modules } from "./modules";
 import { runTurn, resetToolServer } from "./agent";
 import { runChatTurn, listOllamaModels } from "./chatEngine";
+import { configureUpdater, getUpdateStatus, checkForUpdates, installUpdate } from "./updater";
 import { secrets, OPENAI_KEY } from "./secrets";
 import { decodeImages, writeAttachments, attachedImagesBlock } from "./images";
 import { authStatus, authLogin } from "./auth";
@@ -50,6 +51,7 @@ function sanitizeSettings(patch: Partial<AetherSettings>): Partial<AetherSetting
   if (["low", "medium", "high", "xhigh", "max"].includes(patch.effort as string)) out.effort = patch.effort;
   if (patch.personaVoice === "flirty" || patch.personaVoice === "professional") out.personaVoice = patch.personaVoice;
   if (typeof patch.autonomy === "boolean") out.autonomy = patch.autonomy;
+  if (typeof patch.autoUpdate === "boolean") out.autoUpdate = patch.autoUpdate;
   if (["claude", "openai", "ollama"].includes(patch.provider as string)) out.provider = patch.provider;
   for (const k of ["openaiBaseUrl", "openaiModel", "ollamaBaseUrl", "ollamaModel"] as const) {
     if (typeof patch[k] === "string") out[k] = (patch[k] as string).slice(0, 300);
@@ -114,6 +116,11 @@ export function registerIpc(): void {
 
   ipcMain.handle(IPC.authStatus, () => authStatus());
   ipcMain.handle(IPC.authLogin, () => authLogin());
+
+  ipcMain.handle(IPC.updateGet, () => getUpdateStatus());
+  ipcMain.handle(IPC.updateCheck, () => checkForUpdates());
+  ipcMain.handle(IPC.updateInstall, () => installUpdate());
+  configureUpdater((st) => broadcast(IPC.updateStatus, st), settings.autoUpdate !== false);
 
   ipcMain.handle(IPC.providerStatus, () => providerStatus());
   ipcMain.handle(IPC.providerSetKey, async (_e, provider: Provider, key: string) => {
