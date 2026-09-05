@@ -30,6 +30,14 @@ grows while you watch. Runs on macOS and Windows, powered by Claude, ChatGPT, or
 
 </div>
 
+<div align="center">
+
+## Runs on Claude, ChatGPT, or your own local model
+
+**Claude** &nbsp;·&nbsp; **ChatGPT** and any OpenAI-compatible endpoint &nbsp;·&nbsp; **Ollama** (fully local, nothing leaves your machine)
+
+</div>
+
 ---
 
 ### please don't use this to dox the innocent >:(
