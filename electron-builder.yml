@@ -4,6 +4,7 @@ publish:
   provider: github
   owner: fknMega
   repo: Aether
+  releaseType: release
 directories:
   output: release
   buildResources: build

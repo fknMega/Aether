@@ -1,0 +1,38 @@
+# Build Aether for macOS and Windows and publish a GitHub Release.
+# Trigger by pushing a version tag, e.g.  git tag v2.0.2 && git push origin v2.0.2
+# (or run it by hand from the Actions tab). CI's GITHUB_TOKEN publishes the
+# release, so no personal token is needed.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            build: npm run dist:mac
+          - os: windows-latest
+            build: npm run dist:win
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Build and publish
+        run: ${{ matrix.build }} -- --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # No signing certs in CI — the app's custom updater doesn't need them.
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
