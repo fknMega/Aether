@@ -7,6 +7,12 @@ interface Pending extends OutboundImage { preview: string; }
 
 const MAX = 6;
 
+const MODELS = [
+  { id: "claude-opus-5", label: "Opus 5" },
+  { id: "claude-sonnet-5", label: "Sonnet 5" },
+  { id: "claude-haiku-4-5-20251001", label: "Haiku 4.5" },
+];
+
 export function Composer() {
   const [text, setText] = useState("");
   const [imgs, setImgs] = useState<Pending[]>([]);
@@ -17,6 +23,9 @@ export function Composer() {
   const streaming = useStore((s) => !!s.stream);
   const send = useStore((s) => s.send);
   const cancel = useStore((s) => s.cancel);
+  const model = useStore((s) => s.settings?.model);
+  const saveSettings = useStore((s) => s.saveSettings);
+  const modelOptions = MODELS.some((m) => m.id === model) || !model ? MODELS : [...MODELS, { id: model, label: model }];
 
   const grow = () => { const el = taRef.current; if (el) { el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 200) + "px"; } };
 
@@ -72,7 +81,15 @@ export function Composer() {
             </div>
           </div>
         </div>
-        <div className="hint">Aether can search, browse, and work a live graph · Enter to send · Shift+Enter for a new line</div>
+        <div className="composer-foot">
+          <label className="model-pick" title="Switch the Claude model">
+            <span className="dot" />
+            <select value={model ?? "claude-opus-5"} onChange={(e) => void saveSettings({ model: e.target.value })}>
+              {modelOptions.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+            </select>
+          </label>
+          <div className="hint">Enter to send · Shift+Enter for a new line</div>
+        </div>
       </div>
     </div>
   );

@@ -43,10 +43,12 @@ const seedBuiltin = (b: (typeof BUILTINS)[number]): StoredModule => ({
 // A curated catalog that ships with the app. The no-key HTTP ones were live-tested;
 // a high-signal core starts enabled, the rest are available to flip on. Command
 // modules ship disabled — they need the binary installed and autonomy on.
-const H = (id: string, name: string, description: string, url: string, inputLabel: string, on = false, headers?: ModuleHeader[]): StoredModule =>
-  ({ id: "def:" + id, name, description, kind: "http", enabled: on, builtin: false, default: true, method: "GET", url, inputLabel, ...(headers ? { headers } : {}) });
+// All bundled defaults ship enabled. (The `on` arg is kept for historical intent
+// but every default is now on out of the box — see DEFAULTS_GEN migration.)
+const H = (id: string, name: string, description: string, url: string, inputLabel: string, _on = false, headers?: ModuleHeader[]): StoredModule =>
+  ({ id: "def:" + id, name, description, kind: "http", enabled: true, builtin: false, default: true, method: "GET", url, inputLabel, ...(headers ? { headers } : {}) });
 const C = (id: string, name: string, description: string, command: string, inputLabel: string): StoredModule =>
-  ({ id: "def:" + id, name, description, kind: "command", enabled: false, builtin: false, default: true, command, inputLabel });
+  ({ id: "def:" + id, name, description, kind: "command", enabled: true, builtin: false, default: true, command, inputLabel });
 
 const DEFAULT_MODULES: StoredModule[] = [
   // people / identity (no key)
@@ -143,6 +145,12 @@ function decrypt(enc: string): string {
 }
 
 // ── persistence ─────────────────────────────────────────────────────────────
+// Bump to force a one-time re-enable of every bundled default across all installs.
+const DEFAULTS_GEN = 2;
+const genFile = join(paths.dataDir, "modules.gen");
+const readGen = (): number => { try { return parseInt(readFileSync(genFile, "utf8").trim(), 10) || 0; } catch { return 0; } };
+const writeGen = (n: number): void => { try { writeFileSync(genFile, String(n), "utf8"); } catch { /* best effort */ } };
+
 let mods: StoredModule[] = load();
 let connectorNames: string[] = [];
 
@@ -154,7 +162,15 @@ function load(): StoredModule[] {
       if (Array.isArray(raw)) base = reconcileBuiltins(raw);
     }
   } catch (e) { console.error("[aether] modules load failed:", e); }
-  return reconcilePrivate(reconcileDefaults(base));
+  const list = reconcilePrivate(reconcileDefaults(base));
+  // One-time: enable every bundled default (covers installs seeded before the
+  // defaults went all-on). After this runs once, the user's own toggles stick.
+  if (readGen() < DEFAULTS_GEN) {
+    for (const m of list) if (m.id.startsWith("def:")) m.enabled = true;
+    try { writeFileSync(paths.modulesFile, JSON.stringify(list, null, 2), "utf8"); } catch { /* best effort */ }
+    writeGen(DEFAULTS_GEN);
+  }
+  return list;
 }
 
 /** Seed custom modules declared in the gitignored `private/modules.json` (e.g. a

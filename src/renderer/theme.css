@@ -324,6 +324,14 @@ button, input, textarea, select { font-family: inherit; color: inherit; }
 .send-btn.stop { background: var(--danger); color: #fff; }
 .send-btn.stop:hover { background: #d06550; box-shadow: 0 0 20px rgba(193,91,73,0.4); }
 .hint { text-align: center; font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-4); margin-top: 9px; letter-spacing: 0.01em; }
+.composer-foot { display: flex; align-items: center; gap: 12px; margin-top: 9px; padding: 0 2px; }
+.composer-foot .hint { margin-top: 0; flex: 1; text-align: right; }
+.model-pick { display: inline-flex; align-items: center; gap: 7px; background: var(--paper-raised); border: 1px solid var(--border); border-radius: var(--r-pill); padding: 4px 8px 4px 11px; cursor: pointer; transition: border-color var(--t-fast); }
+.model-pick:hover { border-color: var(--ember-line); }
+.model-pick .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ember); box-shadow: 0 0 8px rgba(255,111,165,0.5); flex-shrink: 0; }
+.model-pick select { background: transparent; border: 0; outline: 0; color: var(--ink-2); font-family: var(--font-mono); font-size: 11.5px; cursor: pointer; -webkit-appearance: none; appearance: none; padding-right: 2px; }
+.model-pick:hover select { color: var(--ink); }
+.model-pick select option { background: var(--paper); color: var(--ink); }
 
 /* ── settings & onboarding ─────────────────────────────────────────────────── */
 .pane-scroll { overflow-y: auto; height: 100%; }
