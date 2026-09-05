@@ -145,12 +145,16 @@ function ModelPane() {
         <>
           <div className="field">
             <label>OpenAI API key</label>
-            <div className="desc">Stored encrypted on this machine (OS keychain) and never shown again or sent to the renderer.</div>
+            <div className="desc">
+              OpenAI has no "sign in" for API access, so Aether connects with a key. It's stored encrypted on this
+              machine (OS keychain) and never shown again or sent to the renderer.
+              &nbsp;<a href="#" onClick={(e) => { e.preventDefault(); window.open("https://platform.openai.com/api-keys"); }}>Get a key ↗</a>
+            </div>
             <div className="row-inline">
               <input type="password" className="mono" placeholder={status?.hasKey ? "•••••••• (stored — type to replace)" : "sk-..."} value={key} onChange={(e) => setKey(e.target.value)} />
-              <button className="btn primary" onClick={async () => { await setProviderKey("openai", key); setKey(""); }}>Save</button>
+              <button className="btn primary" disabled={!key.trim()} onClick={async () => { await setProviderKey("openai", key.trim()); setKey(""); }}>Connect</button>
             </div>
-            {status?.hasKey && <div className="desc" style={{ marginTop: 8 }}>A key is stored. <button className="add-row" style={{ marginLeft: 6 }} onClick={() => void setProviderKey("openai", "")}>Remove it</button></div>}
+            {status?.hasKey && <div className="desc" style={{ marginTop: 8, color: "var(--success)" }}>Connected. <button className="add-row" style={{ marginLeft: 6 }} onClick={() => void setProviderKey("openai", "")}>Disconnect</button></div>}
           </div>
           <div className="field">
             <label>Model</label>
