@@ -27,3 +27,7 @@ Thumbs.db
 
 # TypeScript incremental build info
 *.tsbuildinfo
+
+# Nix build outputs
+/result
+/result-*

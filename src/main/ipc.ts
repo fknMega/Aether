@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow } from "electron";
+import { ipcMain, BrowserWindow, nativeTheme } from "electron";
 import { writeFileSync, rmSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { IPC } from "../shared/ipc";
@@ -14,7 +14,7 @@ import { secrets, OPENAI_KEY } from "./secrets";
 import { decodeImages, writeAttachments, attachedImagesBlock } from "./images";
 import { authStatus, authLogin } from "./auth";
 import type { ToolContext } from "./tools/context";
-import type { AetherSettings, ChatRequest, ModuleConfig, Provider, ProviderStatus } from "../shared/types";
+import type { AetherSettings, ChatRequest, ModuleConfig, Provider, ProviderStatus, ToolActivity } from "../shared/types";
 
 let settings: AetherSettings = loadSettings();
 const activeTurns = new Map<string, AbortController>();
@@ -45,6 +45,46 @@ function saveSettings(): void {
   catch (e) { console.error("[aether] could not save settings:", e); }
 }
 
+// ── appearance ───────────────────────────────────────────────────────────────
+// The renderer paints the app, but the OS chrome around it (the window frame,
+// the Windows caption buttons, native scrollbars, the flash of colour before
+// the first paint) is the main process's job. `applyTheme` keeps both in step.
+
+/** Window-chrome colours per resolved theme. These are exactly --ground and
+ *  --ink-2 from theme.css, so the native frame and the CSS panel are the same
+ *  material — no seam at the window edge, no wrong-colour flash before the
+ *  first paint. If theme.css changes, these change with it. */
+export const CHROME = {
+  dark:  { bg: "#0F1214", caption: "#0F1214", symbol: "#A2ACB2" },
+  light: { bg: "#F6F7F8", caption: "#F6F7F8", symbol: "#4A555B" },
+} as const;
+
+/** Resolve `system` against the OS, then repaint the native chrome. */
+/** Must equal --h-title in theme.css: the CSS titlebar and the Windows caption
+ *  strip are the same 36px band and drift visibly if they disagree. */
+export const TITLEBAR_H = 36;
+
+export function applyTheme(pref: AetherSettings["theme"]): void {
+  nativeTheme.themeSource = pref === "light" || pref === "dark" ? pref : "system";
+  const c = CHROME[nativeTheme.shouldUseDarkColors ? "dark" : "light"];
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue;
+    win.setBackgroundColor(c.bg);
+    // Windows/Linux draw their own caption strip over our titlebar.
+    if (process.platform !== "darwin") {
+      try { win.setTitleBarOverlay({ color: c.caption, symbolColor: c.symbol, height: TITLEBAR_H }); }
+      catch { /* only present when titleBarOverlay was set at construction */ }
+    }
+  }
+}
+
+/** The theme the app should boot in, for the window's pre-paint background. */
+export function bootTheme(): { pref: AetherSettings["theme"]; chrome: typeof CHROME[keyof typeof CHROME] } {
+  const pref = settings.theme ?? "system";
+  nativeTheme.themeSource = pref === "light" || pref === "dark" ? pref : "system";
+  return { pref, chrome: CHROME[nativeTheme.shouldUseDarkColors ? "dark" : "light"] };
+}
+
 /** Accept only known settings keys with sane values from the renderer. */
 function sanitizeSettings(patch: Partial<AetherSettings>): Partial<AetherSettings> {
   const out: Partial<AetherSettings> = {};
@@ -54,6 +94,7 @@ function sanitizeSettings(patch: Partial<AetherSettings>): Partial<AetherSetting
   if (patch.personaVoice === "flirty" || patch.personaVoice === "professional") out.personaVoice = patch.personaVoice;
   if (typeof patch.autonomy === "boolean") out.autonomy = patch.autonomy;
   if (typeof patch.autoUpdate === "boolean") out.autoUpdate = patch.autoUpdate;
+  if (["system", "light", "dark"].includes(patch.theme as string)) out.theme = patch.theme;
   if (["claude", "openai", "ollama", "gemini"].includes(patch.provider as string)) out.provider = patch.provider;
   for (const k of ["openaiBaseUrl", "openaiModel", "ollamaBaseUrl", "ollamaModel", "geminiModel"] as const) {
     if (typeof patch[k] === "string") out[k] = (patch[k] as string).slice(0, 300);
@@ -70,6 +111,10 @@ async function startTurn(req: ChatRequest, conversationId: string, prompt: strin
   let finalText = "";
   let cost: number | null = null;
   let failed = false;
+  // The evidence log is accumulated here rather than in the renderer, so it is
+  // stored with the message and survives a reload and a restart. The transcript
+  // cites these by number.
+  const tools: ToolActivity[] = [];
   try {
     const prior = settings.provider === "claude" ? [] : store.listMessages(conversationId).slice(0, -1);
     const stream =
@@ -78,6 +123,11 @@ async function startTurn(req: ChatRequest, conversationId: string, prompt: strin
       : runChatTurn(prompt, prior, settings, toolCtx, abort.signal);
     for await (const event of stream) {
       if (event.type === "session") { store.setClaudeSessionId(conversationId, event.claudeSessionId); continue; }
+      if (event.type === "tool_start") tools.push({ ...event.tool });
+      if (event.type === "tool_end") {
+        const t = tools.find((x) => x.id === event.id);
+        if (t) { t.status = event.status; t.detail = event.detail; t.endedAt = Date.now(); }
+      }
       if (event.type === "done") { finalText = event.text; cost = event.costUsd; }
       if (event.type === "error") failed = true;
       send(event);
@@ -91,7 +141,7 @@ async function startTurn(req: ChatRequest, conversationId: string, prompt: strin
   try {
     // The user may have deleted the thread mid-turn — don't resurrect it.
     if (!failed && finalText && store.getConversation(conversationId)) {
-      store.addMessage(conversationId, "assistant", finalText, cost);
+      store.addMessage(conversationId, "assistant", finalText, cost, [], tools);
       broadcast(IPC.conversationsChanged, null);
     }
   } catch (e) {
@@ -112,10 +162,16 @@ async function providerStatus(): Promise<ProviderStatus> {
 }
 
 export function registerIpc(): void {
+  // When the pref is `system`, the OS can flip under us at any time.
+  nativeTheme.on("updated", () => { if ((settings.theme ?? "system") === "system") applyTheme("system"); });
+
   ipcMain.handle(IPC.settingsGet, () => settings);
   ipcMain.handle(IPC.settingsSet, (_e, patch: Partial<AetherSettings>) => {
     settings = { ...settings, ...sanitizeSettings(patch) };
     saveSettings();
+    // Keep the OS chrome (window frame, native menus, scrollbars) in step with
+    // the palette the renderer is about to paint.
+    applyTheme(settings.theme);
     return settings;
   });
 

@@ -1,20 +1,23 @@
-import { app, BrowserWindow, shell, nativeTheme } from "electron";
+import { app, BrowserWindow, shell } from "electron";
 import { join } from "node:path";
-import { registerIpc } from "./ipc";
+import { registerIpc, applyTheme, bootTheme, TITLEBAR_H } from "./ipc";
 
 const isDev = !app.isPackaged;
 
 function createWindow(): void {
+  // Resolve the saved appearance BEFORE the window exists, so the very first
+  // frame is painted in the right colour instead of flashing the wrong one.
+  const { pref, chrome } = bootTheme();
   const win = new BrowserWindow({
     width: 1280,
     height: 860,
     minWidth: 900,
     minHeight: 600,
     show: false,
-    backgroundColor: "#07070b",
+    backgroundColor: chrome.bg,
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
-    // A dark, frameless-ish chrome on Windows too. Height matches the CSS titlebar.
-    ...(process.platform !== "darwin" ? { titleBarOverlay: { color: "#0c0a14", symbolColor: "#9e9cb0", height: 44 } } : {}),
+    // Windows/Linux get the same flat chrome. Height matches the CSS titlebar.
+    ...(process.platform !== "darwin" ? { titleBarOverlay: { color: chrome.caption, symbolColor: chrome.symbol, height: TITLEBAR_H } } : {}),
     webPreferences: {
       preload: join(import.meta.dirname, "../preload/index.cjs"),
       sandbox: true,
@@ -23,7 +26,7 @@ function createWindow(): void {
     },
   });
 
-  win.once("ready-to-show", () => win.show());
+  win.once("ready-to-show", () => { applyTheme(pref); win.show(); });
 
   // Open external links in the real browser, never inside the app shell.
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -48,7 +51,6 @@ function createWindow(): void {
   }
 }
 
-nativeTheme.themeSource = "dark";
 
 // A second instance would share the JSON store and clobber it — refuse it and
 // focus the window that's already open.

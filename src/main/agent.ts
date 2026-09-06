@@ -6,6 +6,7 @@ import { paths, runtime } from "./config";
 import { systemPrompt } from "./prompt";
 import { findClaudeBinary } from "./auth";
 import { buildToolServer } from "./tools";
+import { makePolicy, SANDBOX_DENY_READ } from "./permissions";
 import type { ToolContext } from "./tools/context";
 import type { AetherSettings, AgentEvent, ToolActivity } from "../shared/types";
 
@@ -45,6 +46,7 @@ function titleFor(name: string, input: unknown): string {
   }
 }
 
+let warnedNoSandbox = false;
 let toolServerPromise: ReturnType<typeof buildToolServer> | null = null;
 function toolServer(ctx: ToolContext) {
   // Cache the built server, but don't cache a transient failure forever.
@@ -71,6 +73,15 @@ export async function* runTurn(
   const timeout = setTimeout(() => abort.abort(), runtime.turnTimeoutMs);
 
   const { server } = await toolServer(ctx);
+  if (settings.autonomy && process.platform === "win32" && !warnedNoSandbox) {
+    warnedNoSandbox = true;
+    console.warn("[aether] autonomy is on and this platform has no sandbox backend — commands run with the policy in main/permissions.ts as the only boundary.");
+  }
+  const policy = makePolicy({
+    isAutonomous: ctx.isAutonomous,
+    roots: () => [paths.workspace],
+    onDenied: (tool, why) => console.warn(`[aether] refused ${tool}: ${why}`),
+  });
   // Point the SDK at the real, unpacked binary. Its own resolution can land on
   // an app.asar path that the OS refuses to exec (ENOTDIR) in a packaged build.
   const claudeBin = findClaudeBinary();
@@ -91,14 +102,52 @@ export async function* runTurn(
         effort: settings.effort,
         systemPrompt: systemPrompt(settings),
         mcpServers: { aether: server },
-        // Headless: nobody is at the desk to approve a tool prompt, so we always
-        // bypass permission checks (the SDK requires the explicit flag for this).
-        // "Safe mode" (autonomy off) keeps the read-only collection tools but
-        // withholds local shell and file-write, rather than the SDK's 'default'
-        // mode which would silently deny every tool with no approval surface.
-        permissionMode: "bypassPermissions",
-        allowDangerouslySkipPermissions: true,
-        ...(settings.autonomy ? {} : { disallowedTools: ["Bash", "Write", "Edit"] }),
+        // NOT bypassPermissions. That flag skips `canUseTool` entirely, which
+        // means no policy runs at all — every tool call is allowed, including a
+        // shell command an injected web page talked the model into. Aether reads
+        // attacker-controlled text for a living, so the boundary has to be real.
+        // `canUseTool` is the enforcement point; see main/permissions.ts.
+        permissionMode: "default",
+        canUseTool: policy,
+        // OS-level isolation for command execution — seatbelt on macOS,
+        // bubblewrap on Linux. This is the only control here that is enforced
+        // by the kernel rather than by us reading strings.
+        //
+        // failIfUnavailable is tied to autonomy on purpose: with the shell
+        // enabled we refuse to run rather than silently degrade to an
+        // unsandboxed agent. In safe mode Bash and the write tools are already
+        // removed from context, so a missing bubblewrap is not worth bricking
+        // the app over.
+        //
+        // Windows is excluded because the SDK's sandbox has no backend there —
+        // failing closed would make autonomy simply not work on Windows rather
+        // than make it safer. Windows users get layers 2-4 and the honest
+        // warning below, which is worse, and is stated rather than hidden.
+        sandbox: {
+          enabled: true,
+          failIfUnavailable: settings.autonomy && process.platform !== "win32",
+          // Our canUseTool policy stays the decision-maker; the sandbox is the
+          // floor under it, not a replacement for it.
+          autoAllowBashIfSandboxed: false,
+          filesystem: { denyRead: SANDBOX_DENY_READ },
+        },
+        settings: {
+          permissions: {
+            // Documented as enforced in EVERY permission mode — this is what
+            // actually fences Read/Grep/Glob to the workspace. `cwd` alone
+            // never did; it is a starting directory, not a boundary.
+            blockReadsOutsideWorkingDirectories: true,
+            additionalDirectories: [],
+          },
+        },
+        // Deliberately empty. The agent's cwd is a directory it can write to,
+        // so loading project settings from there would let it grant itself
+        // permissions by writing .claude/settings.json into its own workspace.
+        // Belt and braces: in safe mode the mutating tools are not merely denied
+        // at call time, they are removed from the model's context entirely.
+        ...(settings.autonomy ? {} : { disallowedTools: ["Bash", "Write", "Edit", "NotebookEdit"] }),
+        // The workspace is the only root. Relative paths resolve here, and the
+        // policy refuses absolute paths that lead anywhere else.
         cwd: paths.workspace,
         ...(claudeBin ? { pathToClaudeCodeExecutable: claudeBin } : {}),
         settingSources: [],

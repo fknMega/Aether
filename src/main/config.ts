@@ -11,7 +11,10 @@ const packaged = app.isPackaged;
 
 /** Writable app data (SQLite-free JSON store, workspace, settings). */
 const DATA_DIR = join(app.getPath("userData"), "data");
-/** Where the agent may read/write files — fenced, never the whole home dir. */
+/** The agent's only filesystem root. Enforced three ways: it is the SDK cwd,
+ *  `blockReadsOutsideWorkingDirectories` refuses reads outside it in every
+ *  permission mode, and main/permissions.ts refuses absolute paths that leave
+ *  it. Before all three existed this comment was aspirational. */
 const WORKSPACE = join(app.getPath("userData"), "workspace");
 /** Bundled offensive-security skill playbooks. */
 const PLUGINS_DIR = packaged ? join(process.resourcesPath, "plugins") : join(PROJECT_ROOT, "plugins");
@@ -43,7 +46,10 @@ const DEFAULT_SETTINGS: AetherSettings = {
   model: process.env.AETHER_MODEL ?? "claude-opus-5",
   effort: (process.env.AETHER_EFFORT as AetherSettings["effort"]) ?? "medium",
   personaVoice: "flirty",
-  autonomy: true,
+  // Off by default. Autonomy lets the agent run shell commands and write files;
+  // Aether ingests attacker-controlled text, so that is a decision the user
+  // makes deliberately, not one they inherit from a default.
+  autonomy: false,
 
   provider: (process.env.AETHER_PROVIDER as AetherSettings["provider"]) ?? "claude",
   openaiBaseUrl: process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1",
@@ -53,6 +59,7 @@ const DEFAULT_SETTINGS: AetherSettings = {
   geminiModel: process.env.GEMINI_MODEL ?? "gemini-2.5-pro",
 
   autoUpdate: true,
+  theme: (process.env.AETHER_THEME as AetherSettings["theme"]) ?? "system",
 };
 
 export const paths = {

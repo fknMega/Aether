@@ -2,13 +2,13 @@ import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { paths } from "./config";
 import type {
-  Conversation, Message, AttachmentMeta, Role,
+  Conversation, Message, AttachmentMeta, Role, ToolActivity,
   CaseGraph, GraphCaseInfo, GraphNode, GraphEdge,
 } from "../shared/types";
 
 // ── on-disk shapes (path kept server-side, never sent to the renderer) ───────
 interface AttachmentRow { id: string; messageId: string; name: string; mimeType: string; path: string; bytes: number; createdAt: number; }
-interface MessageRow { id: string; conversationId: string; role: Role; content: string; createdAt: number; costUsd: number | null; }
+interface MessageRow { id: string; conversationId: string; role: Role; content: string; createdAt: number; costUsd: number | null; tools?: ToolActivity[]; }
 interface NodeRow { caseId: string; key: string; type: string; label: string; value: string | null; status: string; confidence: string | null; notes: string | null; source: string | null; image: string | null; createdAt: number; updatedAt: number; }
 interface EdgeRow { caseId: string; source: string; target: string; label: string | null; confidence: string | null; createdAt: number; }
 interface CaseRow { id: string; name: string; createdAt: number; updatedAt: number; }
@@ -110,10 +110,10 @@ class Store {
     this.persist();
   }
 
-  addMessage(conversationId: string, role: Role, content: string, costUsd: number | null = null, attachments: NewAttachment[] = []): Message {
+  addMessage(conversationId: string, role: Role, content: string, costUsd: number | null = null, attachments: NewAttachment[] = [], tools: ToolActivity[] = []): Message {
     const now = Date.now();
     const id = randomUUID();
-    this.db.messages.push({ id, conversationId, role, content, createdAt: now, costUsd });
+    this.db.messages.push({ id, conversationId, role, content, createdAt: now, costUsd, ...(tools.length ? { tools } : {}) });
     const stored: AttachmentMeta[] = [];
     for (const a of attachments) {
       const aid = randomUUID();
@@ -123,7 +123,7 @@ class Store {
     const c = this.getConversation(conversationId);
     if (c) c.updatedAt = now;
     this.persist();
-    return { id, conversationId, role, content, createdAt: now, costUsd, attachments: stored };
+    return { id, conversationId, role, content, createdAt: now, costUsd, attachments: stored, ...(tools.length ? { tools } : {}) };
   }
 
   listMessages(conversationId: string): Message[] {
@@ -136,7 +136,7 @@ class Store {
     return this.db.messages
       .filter((m) => m.conversationId === conversationId)
       .sort((a, b) => a.createdAt - b.createdAt)
-      .map((m) => ({ id: m.id, conversationId: m.conversationId, role: m.role, content: m.content, createdAt: m.createdAt, costUsd: m.costUsd, attachments: byMsg.get(m.id) ?? [] }));
+      .map((m) => ({ id: m.id, conversationId: m.conversationId, role: m.role, content: m.content, createdAt: m.createdAt, costUsd: m.costUsd, attachments: byMsg.get(m.id) ?? [], ...(m.tools?.length ? { tools: m.tools } : {}) }));
   }
 
   getAttachment(id: string): StoredAttachment | null {

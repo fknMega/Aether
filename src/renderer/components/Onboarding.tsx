@@ -7,11 +7,21 @@ export function Onboarding() {
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const mounted = useRef(true);
-  useEffect(() => () => { mounted.current = false; }, []);
+  // StrictMode mounts, unmounts and remounts: without re-arming the flag here the
+  // cleanup from the first pass leaves it false forever and the poll below exits
+  // on its first tick, so sign-in never completes in development.
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
   const signIn = async () => {
     setBusy(true);
-    const r = await window.aether.authLogin();
+    let r: { ok: boolean; message: string };
+    try {
+      r = await window.aether.authLogin();
+    } catch {
+      // Without this the button stays disabled with no explanation.
+      if (mounted.current) { setMsg("Could not start sign-in. Try again, or run npm run login in a terminal from the project folder."); setBusy(false); }
+      return;
+    }
     if (mounted.current) setMsg(r.message);
     for (let i = 0; i < 40; i++) {
       await new Promise((res) => setTimeout(res, 2000));
@@ -23,20 +33,27 @@ export function Onboarding() {
   };
 
   return (
-    <div className="onboard">
-      <div className="onboard-card fade-in">
-        <h1 style={{ fontSize: 24, margin: "0 0 2px" }}>Sign Aether in to Claude</h1>
-        <div className="rule" />
-        <p className="muted" style={{ fontSize: 14, lineHeight: 1.6, margin: "0 0 6px" }}>
+    <div className="scrim" role="dialog" aria-modal="true" aria-labelledby="onboard-title">
+      <div className="onboard-card">
+        <h1 id="onboard-title">Sign in to Claude</h1>
+        <p className="desc">
           Aether runs on your Claude subscription through the Agent SDK. Sign in once and every session picks it up.
         </p>
-        <button className="btn primary" disabled={busy} style={{ marginTop: 12 }} onClick={signIn}>{busy ? "Waiting for sign-in…" : "Sign in with Claude"}</button>
-        <div className="callout">
-          {msg ?? <>If the button doesn't open a browser, run <code>npm run login</code> in a terminal from the project folder, then come back — this closes automatically once you're in.</>}
+        <div className="field">
+          <button className="btn primary" disabled={busy} onClick={signIn}>
+            {busy ? "Waiting for sign-in" : "Sign in with Claude"}
+          </button>
         </div>
-        <button className="btn ghost" style={{ marginTop: 14, background: "transparent", border: 0, color: "var(--text-3)", fontSize: 12.5 }} onClick={dismiss}>
-          Already set up? Continue anyway →
-        </button>
+        <div className="field">
+          <div className="slab">
+            <div className="grow">
+              <div className="s">
+                {msg ?? "If no browser window opens, run npm run login in a terminal from the project folder. This closes itself once you are signed in."}
+              </div>
+            </div>
+          </div>
+        </div>
+        <button className="btn link" onClick={dismiss}>Already set up — continue</button>
       </div>
     </div>
   );

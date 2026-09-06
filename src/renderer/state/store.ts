@@ -27,6 +27,10 @@ interface Store {
   messages: Message[];
   stream: StreamState | null;
   turnError: string | null;
+  /** A line handed to the composer from elsewhere (an empty-state suggestion).
+   *  The composer takes it and clears it — it is a hand-off slot, not a mirror
+   *  of what is typed. */
+  draft: string;
 
   cases: GraphCaseInfo[];
   activeCaseId: string | null;
@@ -64,6 +68,7 @@ interface Store {
   renameConversation(id: string, title: string): Promise<void>;
   deleteConversation(id: string): Promise<void>;
   send(text: string, images: OutboundImage[]): Promise<void>;
+  setDraft(text: string): void;
   cancel(): Promise<void>;
   handleChatEvent(env: ChatEventEnvelope): void;
 
@@ -85,6 +90,7 @@ export const useStore = create<Store>((set, get) => ({
   messages: [],
   stream: null,
   turnError: null,
+  draft: "",
   cases: [],
   activeCaseId: null,
   graph: null,
@@ -120,6 +126,8 @@ export const useStore = create<Store>((set, get) => ({
   async saveModule(mod) { set({ modules: await A.saveModule(mod) }); },
   async deleteModule(id) { set({ modules: await A.deleteModule(id) }); },
   async toggleModule(id, enabled) { set({ modules: await A.toggleModule(id, enabled) }); },
+
+  setDraft(text) { set({ draft: text }); },
 
   async refreshConversations() { set({ conversations: await A.listConversations() }); },
 
@@ -194,13 +202,32 @@ export const useStore = create<Store>((set, get) => ({
         const final: Message = {
           id: "final-" + turnId, conversationId: s.conversationId, role: "assistant",
           content: event.text, createdAt: Date.now(), costUsd: event.costUsd, attachments: [],
+          // Keep the evidence log on the finished turn. Main persists the same
+          // records, so the reload that follows returns an identical message.
+          tools: s.tools,
         };
         set({ messages: [...get().messages, final], stream: null });
         void get().refreshConversations();
         void get().refreshCases();
         break;
       }
-      case "error": set({ stream: null, turnError: event.message }); break;
+      case "error": {
+        // Freeze whatever the turn produced into a visible message instead of
+        // dropping it. Nulling the stream threw away every completed tool row
+        // and any partial prose — while the banner told the user the case had
+        // kept what was written. Nothing is persisted by main on a failed turn,
+        // so this record lives for the session only, which is the truth.
+        const partial = s.text.trim();
+        const salvage: Message[] = (partial || s.tools.length > 0)
+          ? [{
+              id: "failed-" + turnId, conversationId: s.conversationId, role: "assistant",
+              content: partial, createdAt: Date.now(), costUsd: null, attachments: [],
+              tools: s.tools,
+            }]
+          : [];
+        set({ stream: null, turnError: event.message, messages: [...get().messages, ...salvage] });
+        break;
+      }
     }
   },
 

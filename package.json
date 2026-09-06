@@ -1,6 +1,6 @@
 {
   "name": "aether",
-  "version": "2.0.4",
+  "version": "2.0.5",
   "description": "A clean, animated desktop AI agent that works a live knowledge graph — OSINT & authorized security research, on macOS and Windows.",
   "author": "the Aether contributors",
   "license": "MIT",
@@ -18,7 +18,10 @@
     "dist": "electron-vite build && electron-builder",
     "dist:mac": "electron-vite build && electron-builder --mac",
     "dist:win": "electron-vite build && electron-builder --win",
-    "postinstall": "electron-builder install-app-deps || true"
+    "postinstall": "electron-builder install-app-deps || true",
+    "preview:web": "vite --config vite.preview.config.mts",
+    "shots": "electron scripts/shots.mjs",
+    "test": "node --experimental-strip-types --test src/main/*.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.234",
@@ -35,7 +38,6 @@
     "electron": "^33.2.1",
     "electron-builder": "^25.1.8",
     "electron-vite": "^2.3.0",
-    "framer-motion": "^11.15.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^9.0.1",

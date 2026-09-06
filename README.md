@@ -52,24 +52,32 @@ baddie, not her. Be normal.
 
 ## What it's like to use
 
-You hand Aether a selector and she gets to work. She thinks out loud like she's writing up a case file, not
-firing off chat replies. Every tool she runs shows up as a small line in a running log that ticks from
-"working" to "done." The moment she finds something she writes it into the graph, then flips its status as she
-confirms it or rules it out.
+You hand Aether a selector and she gets to work, writing up what she finds rather than firing off chat replies.
+Every tool she runs shows up as a numbered line in an evidence log that stays with the turn — so a finding has an
+address you can cite later, like `02.1`. The moment she finds something she writes it into the graph, then flips its
+status as she confirms it or rules it out.
 
-Color on the graph means status, not decoration. Only the target glows. A confirmed fact gets a white ring,
-the stuff she still has to chase pulses pink. Nodes carry real pictures too: a face on a person, the site's
-favicon on an account, the actual photo on a photo node.
+The graph encodes meaning rather than decorating with it. **Shape is the selector type** — circles for
+identity, squares for infrastructure, diamonds for artifacts, triangles for contact details. **The ring is the
+status**: a solid ring is confirmed, a ring broken at twelve o'clock is an open lead, dashed is a candidate,
+and an excluded node is hatched and struck through. **Roman type is established, italic is provisional.** All
+of it survives a greyscale screenshot, and all of it reads the same in either theme. Nodes carry real pictures
+too: a face on a person, the site's favicon on an account, the photo itself on a photo node.
 
 <div align="center">
 
-<img src="docs/media/chat.png" width="92%" alt="The chat, written like a dossier" />
-<br/><em>She writes it up like a report. Her reasoning is set in serif, the evidence in mono, every tool call logged as she goes.</em>
+<img src="docs/media/chat.png" width="92%" alt="The transcript, with every turn numbered" />
+<br/><em>Every turn is numbered and every tool call sub-numbered beneath it. Your words are kept verbatim in mono; her report is set in sans against a margin rule.</em>
 
 <br/><br/>
 
-<img src="docs/media/graph.png" width="92%" alt="The live knowledge graph" />
-<br/><em>The graph is the hero. A force-directed canvas you can pan, zoom and drag, colored by type and ringed by status.</em>
+<img src="docs/media/graph-node.png" width="92%" alt="A selected node on the knowledge graph" />
+<br/><em>Selecting a node brackets it, draws a crosshair through it, lights its neighbourhood and drops everything else back a value step.</em>
+
+<br/><br/>
+
+<img src="docs/media/graph-light.png" width="92%" alt="The knowledge graph in the light theme" />
+<br/><em>A first-class light theme, not an inverted dark one. The canvas is drawn from the same tokens as the rest of the app, so it repaints instantly when the theme changes.</em>
 
 <br/><br/>
 
@@ -79,18 +87,22 @@ favicon on an account, the actual photo on a photo node.
 <br/><br/>
 
 <img src="docs/media/providers.png" width="92%" alt="Provider settings" />
-<br/><em>Run her on Claude, on ChatGPT, or fully local through Ollama. Same tools, same graph, your choice of brain.</em>
+<br/><em>Run her on Claude, on ChatGPT, on Gemini, or fully local through Ollama. Same tools, same graph, your choice of brain.</em>
 
 </div>
 
 ## What's in the box
 
-**A live knowledge graph.** A force-directed canvas rendered like ink on paper. Nodes are colored by selector
-type, ringed by status, sized by how connected they are, and shown with real pictures where there are any.
-It's the main workspace, and it updates as the case builds.
+**A live knowledge graph.** A force-directed canvas you can pan, zoom and drag. Marks are shaped by selector
+type, ringed by status, sized by how connected they are, and carry real pictures where there are any. A node
+written mid-turn pulses one expanding ring, so you can see *which* of the four things a tool just reported
+actually landed. It's the main workspace, and it updates as the case builds.
 
-**A chat that reads like a case file.** Answers stream in as she writes them, and every tool call shows up as
-its own line in an evidence log that animates from running to done.
+**A transcript you can cite.** Answers stream in as she writes them, and every tool call is a numbered line in
+an evidence log that is stored with the turn instead of vanishing when it finishes.
+
+**Light and dark, both first-class.** One palette, defined twice, with every pairing contrast-checked. The
+graph canvas reads from the same tokens as the DOM, so switching theme repaints it with no reload.
 
 **A built-in Sherlock.** `username_search` checks a handle across dozens of platforms at once, no Python and no
 setup, and tells you where a public profile exists.
@@ -131,6 +143,19 @@ On Claude, the first launch walks you through signing in (or run `npm run login`
 your key or point at your local server in Settings and go. You'll need Node 18+; there's no database to run and
 no native toolchain to install, and state is a plain JSON file.
 
+### Nix
+
+There's a flake, so `nix develop` gets you a shell with the right Node, the nixpkgs Electron (no postinstall
+binary download), and — on Linux — the Chromium runtime libraries that otherwise fail at window creation.
+
+```bash
+nix develop          # dev shell, then: npm install && npm run dev
+nix build            # Linux package; see the note in flake.nix about npmDepsHash
+```
+
+`flake.lock` is not committed — run `nix flake lock` once, or let `nix develop` generate it, so the pin is
+yours rather than one baked in by whoever wrote the flake.
+
 ## Building an app
 
 ```bash
@@ -150,18 +175,41 @@ that has `contents:write`).
 
 ## The security part, worth reading
 
-Aether is an autonomous agent that runs on your machine, so treat it the way you'd treat a coding agent with
-the permission prompts turned off. With autonomy on (the default) she runs shell commands, local-command
-modules, and file writes without asking, all inside a fenced workspace, but a determined command can still
-reach the rest of your account. Turn autonomy off in Settings for a safe mode that keeps the read-only
-collection tools and API modules and drops the shell.
+**Does the AI get its own environment, or can it wreck my machine?** It gets one. Command execution runs
+inside an OS-level sandbox — Seatbelt on macOS, Bubblewrap on Linux — and there are three more layers above it:
 
-Custom modules are trusted config, so only add ones you wrote or trust. Keys, both for modules and for your AI
-provider, are encrypted at rest with the OS keychain and never sent to the renderer in plaintext. And prompt
-injection is real: Aether reads web pages and text inside images as part of the job, and treats all of it as
-data rather than commands, but no mitigation is perfect, so don't turn her loose on hostile targets while
-secrets are within reach. None of this is a bug list. It's just what the tool is, and open-sourcing it means
-you can read exactly what it does.
+| Layer | What it does | Enforced by |
+|---|---|---|
+| OS sandbox | Isolates command execution from the rest of the account | the kernel |
+| Read boundary | File reads cannot leave the workspace, in any permission mode | the Agent SDK |
+| Policy | Refuses paths outside the workspace, a credential deny-list, fail-closed on anything it can't parse | [`src/main/permissions.ts`](src/main/permissions.ts) |
+| Tool removal | In safe mode the shell and write tools are stripped from the model's context entirely | the Agent SDK |
+
+**Safe mode is the default.** Autonomy — the shell, file writes, and local-command modules — is off until you
+turn it on. With it off, Aether keeps search, recon, the graph and API modules, and cannot execute anything.
+
+Some things stay off-limits **whether or not autonomy is on**: SSH, GPG, AWS, gcloud, Kubernetes and Docker
+credentials; browser profiles, cookie stores and saved logins; shell history and `.env` files; and Aether's own
+settings, module keys and sign-in tokens. The boundary is asserted by tests, not just described — see
+[`permissions.test.ts`](src/main/permissions.test.ts) and run `npm test`.
+
+**Prompt injection is the real threat here, and it is not hypothetical.** Aether's whole job is reading
+content written by the people it investigates, so a target who expects to be looked at can plant instructions
+where Aether will read them. The system prompt tells the model that every byte returned by a tool is evidence
+and never an instruction, and to report an attempted injection as a finding. That plus the sandbox is a
+serious mitigation, not a solved problem — the layers exist precisely because the prompt alone is not enough.
+
+**What is still on you.** Custom modules are trusted config: only add ones you wrote or trust, because a
+command module is a shell command you asked for. Keys, both for modules and for your AI provider, are
+encrypted at rest with the OS keychain and never sent to the renderer in plaintext.
+
+On Linux the sandbox needs `bubblewrap`; with autonomy on, Aether refuses to start a turn rather than silently
+run unsandboxed. **On Windows there is no sandbox backend at all** — autonomy there gets the read boundary, the
+policy and tool removal, but not kernel isolation. That is a real gap, and it is stated here rather than
+papered over: if you run with autonomy on Windows, the policy is the only thing between a hostile page and your
+account.
+
+None of this is a bug list. It's what the tool is, and open-sourcing it means you can read exactly what it does.
 
 ## Community and support
 

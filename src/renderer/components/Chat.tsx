@@ -1,16 +1,17 @@
 import React, { useEffect, useRef } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { useStore } from "../state/store";
-import { MessageBubble } from "./MessageBubble";
+import { MessageBubble, Prose, TurnHead, turnNo } from "./MessageBubble";
 import { ToolCard } from "./ToolCard";
 import { Composer } from "./Composer";
+import { IFail, ISearch, IGraph, IImage, IKey } from "./icons";
 
-const SUGGESTIONS: [string, string][] = [
-  ["@", "Work this username across platforms: —"],
-  ["◇", "Map the infrastructure behind a domain"],
-  ["▣", "Read the EXIF on a photo I'll attach"],
-  ["⌘", "Recon a HackTheBox target I'm authorized on"],
+/** Each suggestion fills the composer rather than sending — a half-written
+ *  prompt fired on click is a turn the operator never chose to spend. */
+const SUGGESTIONS: Array<{ icon: React.ReactNode; label: string; draft: string }> = [
+  { icon: <ISearch size={13} />, label: "Username sweep", draft: "Sweep this username across platforms: " },
+  { icon: <IGraph size={13} />, label: "Map a domain", draft: "Map the infrastructure behind this domain: " },
+  { icon: <IImage size={13} />, label: "Read a photo's EXIF", draft: "Read the EXIF on the photo I've attached." },
+  { icon: <IKey size={13} />, label: "Recon a host", draft: "Recon this host — I am authorized to test it: " },
 ];
 
 export function Chat() {
@@ -24,7 +25,7 @@ export function Chat() {
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages, stream?.text, stream?.tools.length, stream?.thinking, turnError]);
+  }, [messages, stream?.text, stream?.tools.length, turnError]);
 
   return (
     <div className="chat">
@@ -32,10 +33,18 @@ export function Chat() {
         <Welcome />
       ) : (
         <div className="chat-scroll" ref={scrollRef}>
-          {turnError && <div className="banner">{turnError}</div>}
           <div className="chat-inner">
-            {messages.map((m) => <MessageBubble key={m.id} msg={m} />)}
-            {stream && <StreamingBubble />}
+            {/* An error is prose, not a key/value pair. The leader row truncates
+                by design, which hid the half of the message that says what to do
+                about it behind a hover tooltip. */}
+            {turnError && (
+              <div className="banner" role="alert">
+                <span className="gut"><IFail size={15} /></span>
+                <p>{turnError}</p>
+              </div>
+            )}
+            {messages.map((m, i) => <MessageBubble key={m.id} msg={m} index={i + 1} />)}
+            {stream && <StreamingTurn index={messages.length + 1} />}
           </div>
         </div>
       )}
@@ -44,45 +53,47 @@ export function Chat() {
   );
 }
 
-function StreamingBubble() {
+function StreamingTurn({ index }: { index: number }) {
   const stream = useStore((s) => s.stream)!;
   const hasBody = stream.text.length > 0;
+  const running = stream.tools.some((t) => t.status === "running");
+  const nn = turnNo(index);
+
   return (
-    <div className="msg ai">
-      <div className="ai-eyebrow">
-        <span className="who">Aether</span>
-        <span className="when">now</span>
-      </div>
-      <div className="bubble">
-        {stream.tools.length > 0 && (
-          <div className="tools-wrap">{stream.tools.map((t) => <ToolCard key={t.id} tool={t} />)}</div>
-        )}
-        {!hasBody && stream.tools.every((t) => t.status !== "running") && !stream.error && (
-          <div className="thinking"><span className="orbit" />{stream.thinking ? "reasoning" : "on it"}</div>
-        )}
-        {hasBody && (
-          <div className="bubble-content">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{stream.text}</ReactMarkdown>
-            <span className="cursor" />
-          </div>
-        )}
-      </div>
+    <div className="turn">
+      <TurnHead n={index} who="Aether" value="now" />
+      {stream.tools.length > 0 && (
+        <div className="tool-log">
+          {stream.tools.map((t, i) => <ToolCard key={t.id} tool={t} index={`${nn}.${i + 1}`} />)}
+        </div>
+      )}
+      {!hasBody && !running && (
+        <div className="working" role="status" aria-label="Working">
+          <i /><i /><i />
+        </div>
+      )}
+      {hasBody && <Prose text={stream.text} streaming />}
     </div>
   );
 }
 
 function Welcome() {
-  const send = useStore((s) => s.send);
-  const owner = useStore((s) => s.settings?.ownerName);
+  const owner = useStore((s) => s.settings?.ownerName?.trim());
+  const setDraft = useStore((s) => s.setDraft);
+
   return (
-    <div className="welcome">
-      <div className="welcome-card fade-in">
+    <div className="empty">
+      <div className="empty-card">
         <h1>{owner ? `What are we looking into, ${owner}?` : "What are we looking into?"}</h1>
-        <div className="rule" />
-        <p>Hand me a target and one selector — a name, an email, a username, a domain, a photo — and I'll open a case file and work it end to end.</p>
-        <div className="chip-row">
-          {SUGGESTIONS.map(([g, s]) => (
-            <button key={s} className="chip" onClick={() => void send(s, [])}><span className="glyph">{g}</span>{s}</button>
+        <div className="empty-rule" />
+        <p>Give Aether one selector — a name, an email, a username, a domain, or a photo — and it opens a case and works it end to end.</p>
+        <div className="suggests">
+          {SUGGESTIONS.map((s) => (
+            <button key={s.label} type="button" className="row" onClick={() => setDraft(s.draft)}>
+              <span className="gut">{s.icon}</span>
+              <span className="lbl" title={s.label}>{s.label}</span>
+              <span className="lead" />
+            </button>
           ))}
         </div>
       </div>

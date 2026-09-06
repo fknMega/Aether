@@ -12,6 +12,13 @@ import type {
 const q = new URLSearchParams(location.search);
 const now = Date.now();
 
+// `?theme=light|dark|system` drives the seeded appearance so every palette is
+// reachable from a URL; anything else falls back to dark.
+const THEMES: AetherSettings["theme"][] = ["system", "light", "dark"];
+const themeParam = THEMES.find((t) => t === q.get("theme")) ?? "dark";
+// `?fail=1` makes the simulated turn end in an error banner instead of a reply.
+const failTurn = q.has("fail") && q.get("fail") !== "0";
+
 // unsplash/pravatar images — remote, allowed by the preview CSP only.
 const face = (n: number) => `https://i.pravatar.cc/240?img=${n}`;
 const photo = (id: string, w = 400) => `https://images.unsplash.com/${id}?auto=format&fit=crop&w=${w}&q=70`;
@@ -30,6 +37,7 @@ let settings: AetherSettings = {
   ollamaModel: "llama3.1",
   geminiModel: "gemini-2.5-pro",
   autoUpdate: true,
+  theme: themeParam,
 };
 
 let providerKeySet = false;
@@ -49,16 +57,21 @@ const conversations: Conversation[] = [
 
 const messages: Record<string, Message[]> = {
   c0: [
-    { id: "k1", conversationId: "c0", role: "user", content: "Who is **fknMega**? Just the handle to start — figure out where they're active and whether it ties to a real identity. Authorized: it's my own alt, checking my exposure.", createdAt: now - 900e3, costUsd: null, attachments: [] },
-    { id: "k2", conversationId: "c0", role: "assistant", content: "Love this one. Opening a case on **fknMega** and running the handle across platforms first — I'll write every hit into the graph as it lands.\n\nStarting sweep now. Flip over to the **Graph** tab and watch it build.", createdAt: now - 880e3, costUsd: 0.0089, attachments: [] },
+    { id: "k1", conversationId: "c0", role: "user", content: "Who is fknMega? Just the handle to start — figure out where they're active and whether it ties to a real identity. Authorized: it's my own alt, checking my exposure.", createdAt: now - 900e3, costUsd: null, attachments: [] },
+    { id: "k2", conversationId: "c0", role: "assistant", content: "Opening a case on **fknMega** and running the handle across platforms first — I'll write every hit into the graph as it lands.\n\nStarting sweep now. Flip over to the **Graph** tab and watch it build.", createdAt: now - 880e3, costUsd: 0.0089, attachments: [] },
     { id: "k3", conversationId: "c0", role: "user", content: "go", createdAt: now - 600e3, costUsd: null, attachments: [] },
-    { id: "k4", conversationId: "c0", role: "assistant", content: "Here's where **fknMega** lives, and who's behind it.\n\n| Platform | Status | Signal |\n|---|---|---|\n| Twitch | confirmed | 18.4k followers, panels link the Discord + `fknmega.gg` |\n| YouTube | confirmed | same avatar, **business@fknmega.gg** on the About page |\n| X / Reddit | confirmed | bio says *Austin, TX*, both cross-link the site |\n| GitHub | confirmed | overlay repo, commits signed **Marcus** |\n\nThe identity chain: the YouTube business email recovers the **GitHub**, whose commits are authored by **Marcus D. Reyes**. A people-search on that name in the *78704* ZIP (where a stream VOD placed him) turns up a phone, **(512) 704-1183**, and an address, **1712 W Mary St, Austin TX** — both low-confidence, one source each, so I've flagged them for a second look. The birthday shout-outs line up with a Travis County voter record: **Apr 12 1998**.\n\nSo fknMega is very likely **Marcus Reyes, 26, Austin**. Want me to firm up the phone and address with a second source, or leave it there?", createdAt: now - 250e3, costUsd: 0.0417, attachments: [] },
+    { id: "k4", conversationId: "c0", role: "assistant", content: "Here's where **fknMega** lives, and who's behind it.\n\n| Platform | Status | Signal |\n|---|---|---|\n| Twitch | confirmed | 18.4k followers, panels link the Discord + `fknmega.gg` |\n| YouTube | confirmed | same avatar, **business@fknmega.gg** on the About page |\n| X / Reddit | confirmed | bio gives Austin, TX; both cross-link the site |\n| GitHub | confirmed | overlay repo, commits signed **Marcus** |\n\nThe identity chain: the YouTube business email recovers the **GitHub**, whose commits are authored by **Marcus D. Reyes**. A people-search on that name in the 78704 ZIP (where a stream VOD placed him) turns up a phone, **(512) 704-1183**, and an address, **1712 W Mary St, Austin TX** — both low-confidence, one source each, so I've flagged them for a second look. The birthday shout-outs line up with a Travis County voter record: **Apr 12 1998**.\n\nSo fknMega is very likely **Marcus Reyes, 26, Austin**. Want me to firm up the phone and address with a second source, or leave it there?", createdAt: now - 250e3, costUsd: 0.0417, attachments: [], tools: [
+      { id: "t-k4-1", name: "username_search", title: "username_search \"fknMega\"", status: "ok", detail: "11 sites, 6 hits", startedAt: now - 600e3, endedAt: now - 580e3 },
+      { id: "t-k4-2", name: "graph_upsert", title: "graph_upsert", status: "ok", detail: "9 nodes, 11 edges", startedAt: now - 578e3, endedAt: now - 575e3 },
+      { id: "t-k4-3", name: "http_probe", title: "http_probe fknmega.gg", status: "error", detail: "403 from origin", startedAt: now - 500e3, endedAt: now - 496e3 },
+      { id: "t-k4-4", name: "graph_upsert", title: "graph_upsert", status: "ok", detail: "4 nodes, 3 edges", startedAt: now - 300e3, endedAt: now - 297e3 },
+    ] },
   ],
   c1: [
-    { id: "m1", conversationId: "c1", role: "user", content: "Work this up for me: Maya Okafor, maya.okafor@gmail.com, and the handle @mayacodes. Consent-based, she asked me to check her own exposure.", createdAt: now - 3600e3, costUsd: null, attachments: [{ id: "att1", name: "profile.jpg", mimeType: "image/jpeg" }] },
-    { id: "m2", conversationId: "c1", role: "assistant", content: "On it. Opening a case graph for **Maya Okafor** and seeding the three selectors you gave me.\n\nHere's the plan:\n\n1. Run `@mayacodes` across platforms with `username_search`.\n2. Pull EXIF from the photo you attached (GPS + camera).\n3. Map the mail domain and any linked accounts.\n\nI'll flip nodes from *pending* → *confirmed* as links firm up. Watch the **Graph** tab — it's building live.", createdAt: now - 3550e3, costUsd: 0.0182, attachments: [] },
+    { id: "m1", conversationId: "c1", role: "user", content: "Work this up for me: Maya Okafor, maya.okafor@gmail.com, and the handle @mayacodes. Consent-based: Maya asked me to check the exposure.", createdAt: now - 3600e3, costUsd: null, attachments: [{ id: "att1", name: "profile.jpg", mimeType: "image/jpeg" }] },
+    { id: "m2", conversationId: "c1", role: "assistant", content: "On it. Opening a case graph for **Maya Okafor** and seeding the three selectors you gave me.\n\nHere's the plan:\n\n1. Run `@mayacodes` across platforms with `username_search`.\n2. Pull EXIF from the photo you attached (GPS + camera).\n3. Map the mail domain and any linked accounts.\n\nI'll move nodes from pending to confirmed as links firm up. Watch the **Graph** tab — it's building live.", createdAt: now - 3550e3, costUsd: 0.0182, attachments: [] },
     { id: "m3", conversationId: "c1", role: "user", content: "Great. What did the username sweep turn up?", createdAt: now - 1300e3, costUsd: null, attachments: [] },
-    { id: "m4", conversationId: "c1", role: "assistant", content: "`@mayacodes` resolves to public profiles on **GitHub**, **Mastodon** and **Dev.to**, and is *taken but private* on Instagram. No hit on TikTok or Reddit.\n\n| Platform | Status | Signal |\n|---|---|---|\n| GitHub | confirmed | 42 repos, bio links helio-labs.io |\n| Mastodon | confirmed | same avatar as the photo you gave me |\n| Dev.to | candidate | name matches, no cross-link yet |\n\nThe GitHub bio links back to **helio-labs.io**, which ties her to that domain — I've drawn the edge and marked it high-confidence.", createdAt: now - 1250e3, costUsd: 0.0231, attachments: [] },
+    { id: "m4", conversationId: "c1", role: "assistant", content: "`@mayacodes` resolves to public profiles on **GitHub**, **Mastodon** and **Dev.to**, and is *taken but private* on Instagram. No hit on TikTok or Reddit.\n\n| Platform | Status | Signal |\n|---|---|---|\n| GitHub | confirmed | 42 repos, bio links helio-labs.io |\n| Mastodon | confirmed | same avatar as the photo you gave me |\n| Dev.to | candidate | name matches, no cross-link yet |\n\nThe GitHub bio links back to **helio-labs.io**, which ties Maya to that domain — I've drawn the edge and marked it high-confidence.", createdAt: now - 1250e3, costUsd: 0.0231, attachments: [] },
   ],
   c2: [
     { id: "m5", conversationId: "c2", role: "user", content: "Map the infrastructure behind helio-labs.io", createdAt: now - 5500e3, costUsd: null, attachments: [] },
@@ -84,7 +97,7 @@ function mayaGraph(): CaseGraph {
     N({ key: "mastodon.social/@mayacodes", type: "account", label: "Mastodon · @mayacodes", status: "confirmed", confidence: "medium", image: favicon("mastodon.social"), notes: "Same avatar as the operator's photo.", source: "username_search" }),
     N({ key: "dev.to/mayacodes", type: "account", label: "Dev.to · mayacodes", status: "candidate", confidence: "low", image: favicon("dev.to"), notes: "Name matches, no cross-link yet.", source: "username_search" }),
     N({ key: "instagram.com/mayacodes", type: "account", label: "Instagram · mayacodes", status: "pending", image: favicon("instagram.com"), notes: "Taken but private — can't confirm ownership." }),
-    N({ key: "helio-labs.io", type: "domain", label: "helio-labs.io", status: "confirmed", confidence: "high", image: favicon("helio-labs.io"), notes: "Her side project. Cloudflare, Namecheap, GWS mail.", source: "whois / dns_lookup" }),
+    N({ key: "helio-labs.io", type: "domain", label: "helio-labs.io", status: "confirmed", confidence: "high", image: favicon("helio-labs.io"), notes: "Maya's side project. Cloudflare, Namecheap, GWS mail.", source: "whois / dns_lookup" }),
     N({ key: "ns.cloudflare.com", type: "host", label: "Cloudflare NS", status: "searched", notes: "Nameservers for helio-labs.io." }),
     N({ key: "rooftop.jpg", type: "photo", label: "rooftop.jpg", status: "confirmed", confidence: "medium", image: photo("photo-1519681393784-d120267933ba", 320), notes: "EXIF: iPhone 14 Pro, GPS 38.72,-9.14 (Lisbon), 2024-05-11.", source: "exif_read" }),
     N({ key: "lisbon, portugal", type: "location", label: "Lisbon, Portugal", status: "confirmed", confidence: "medium", image: photo("photo-1585208798174-6cedd86e019a", 320), notes: "From the photo's GPS + GitHub profile location." }),
@@ -160,6 +173,15 @@ function fknMegaGraph(): CaseGraph {
     N({ key: "1712 w mary st, austin tx 78704", type: "address", label: "1712 W Mary St, Austin TX 78704", status: "candidate", confidence: "low", image: photo("photo-1568605114967-8130f3a36994", 320), notes: "People-search address for a 'Marcus Reyes' in the 78704 ZIP the stream VOD placed him in. Low confidence.", source: "people-search" }),
     N({ key: "dob:1998-04-12", type: "note", label: "DOB · Apr 12 1998 (26)", status: "candidate", confidence: "low", notes: "Birthday shout-outs on stream + a voter-record match in Travis County.", source: "correlation" }),
     N({ key: "employer:local-esports", type: "employer", label: "Rooster Teeth (freelance)", status: "candidate", confidence: "low", image: favicon("roosterteeth.com"), notes: "LinkedIn lists a freelance video-editing contract.", source: "linkedin" }),
+    // The rest of the mark vocabulary, so one screenshot of the default case
+    // shows every shape family and all five ring treatments.
+    N({ key: "tiktok.com/@fknmega", type: "account", label: "TikTok · @fknMega", status: "pending", image: favicon("tiktok.com"), notes: "Handle is taken but the account has no posts. Ownership unconfirmed.", source: "username_search" }),
+    N({ key: "cdn.fknmega.gg", type: "host", label: "cdn.fknmega.gg", status: "pending", notes: "Seen in a page asset URL; not yet resolved.", source: "http_probe" }),
+    N({ key: "porkbun", type: "service", label: "Porkbun (registrar)", status: "confirmed", confidence: "high", image: favicon("porkbun.com"), notes: "Registrar of record for fknmega.gg.", source: "whois" }),
+    N({ key: "sponsor-kit.pdf", type: "document", label: "sponsor-kit.pdf", status: "searched", notes: "Media kit linked from the .gg site. Author field is empty; no useful metadata.", source: "http_probe" }),
+    N({ key: "linkedin.com/in/mreyes-sea", type: "account", label: "LinkedIn · M. Reyes (Seattle)", status: "dead", confidence: "low", image: favicon("linkedin.com"), notes: "Excluded. Different person — Seattle, finance, no overlap with any confirmed selector.", source: "username_search" }),
+    N({ key: "+1 512-555-0147", type: "phone", label: "+1 (512) 555-0147", status: "dead", notes: "Excluded. People-search number for a different Marcus Reyes in the same ZIP.", source: "people-search" }),
+    N({ key: "note:scope", type: "note", label: "Scope · operator's own alt", status: "confirmed", confidence: "high", notes: "Operator states this is their own account and authorized the lookup.", source: "operator" }),
   ];
   const E = (source: string, target: string, label: string, confidence = "high"): GraphEdge => ({ source, target, label, confidence });
   const edges: GraphEdge[] = [
@@ -187,6 +209,13 @@ function fknMegaGraph(): CaseGraph {
     E("marcus reyes", "1712 w mary st, austin tx 78704", "listed address", "low"),
     E("1712 w mary st, austin tx 78704", "austin, tx", "in city"),
     E("marcus reyes", "dob:1998-04-12", "date of birth", "low"),
+    E("fknmega", "tiktok.com/@fknmega", "possible profile", "low"),
+    E("fknmega.gg", "cdn.fknmega.gg", "subdomain", "medium"),
+    E("fknmega.gg", "porkbun", "registrar"),
+    E("fknmega.gg", "sponsor-kit.pdf", "hosts"),
+    E("marcus reyes", "linkedin.com/in/mreyes-sea", "ruled out", "low"),
+    E("marcus reyes", "+1 512-555-0147", "ruled out", "low"),
+    E("fknmega", "note:scope", "scope"),
   ];
   return { case: caseInfo("case-fknmega", "fknMega", nodes, edges, now - 240e3), nodes, edges };
 }
@@ -225,26 +254,48 @@ const emit = (turnId: string, event: AgentEvent) => chatCb?.({ turnId, event });
 async function simulateTurn(req: ChatRequest) {
   const { turnId } = req;
   const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
-  await wait(500);
+  await wait(400);
+  // Reasoning arrives before any tool, so the "working" state is visible on its
+  // own for a beat rather than only underneath a running tool.
+  emit(turnId, { type: "thinking", text: "Three selectors, one of them a photo. Seed the case first, then sweep the handle, then read the EXIF." });
+  await wait(900);
   emit(turnId, { type: "tool_start", tool: { id: "t1", name: "graph_upsert", title: 'graph_upsert · seed "Maya Okafor"', status: "running", startedAt: Date.now() } });
   await wait(1400);
   emit(turnId, { type: "tool_end", id: "t1", status: "ok", detail: "wrote 4 nodes, 3 edges" });
+  emit(turnId, { type: "graph_touched", caseName: "Maya Okafor" });
   emit(turnId, { type: "tool_start", tool: { id: "t2", name: "username_search", title: 'username_search "mayacodes"', status: "running", startedAt: Date.now() } });
   await wait(2200);
   emit(turnId, { type: "tool_end", id: "t2", status: "ok", detail: "3 of 31 platforms matched" });
   emit(turnId, { type: "tool_start", tool: { id: "t3", name: "exif_read", title: "exif_read rooftop.jpg", status: "running", startedAt: Date.now() } });
   await wait(1500);
   emit(turnId, { type: "tool_end", id: "t3", status: "ok", detail: "GPS 38.72,-9.14 · iPhone 14 Pro" });
-  const full = "Case is taking shape. `@mayacodes` is live on **GitHub**, **Mastodon** and **Dev.to**, and the rooftop photo geotags to **Lisbon** (38.72, -9.14, shot on an iPhone 14 Pro in May 2024).\n\nThe GitHub bio links **helio-labs.io** — I've tied that in as high-confidence. Frontier still has Instagram (private) and an unverified phone number open. Want me to push on those?";
+  // A failing tool that the turn survives — the run keeps going and reports it.
+  emit(turnId, { type: "tool_start", tool: { id: "t4", name: "http_probe", title: "http_probe helio-labs.io", status: "running", startedAt: Date.now() } });
+  await wait(1300);
+  emit(turnId, { type: "tool_end", id: "t4", status: "error", detail: "403 from the origin after 3 attempts" });
+  emit(turnId, { type: "thinking", text: "The probe is blocked. Enough is confirmed to answer without it." });
+  await wait(600);
+
+  if (failTurn) {
+    emit(turnId, { type: "error", message: "The provider dropped the connection mid-turn. The case keeps what was written before the drop. Try again, or switch providers in Settings." });
+    return;
+  }
+
+  const full = "Case is taking shape. `@mayacodes` is live on **GitHub**, **Mastodon** and **Dev.to**, and the rooftop photo geotags to **Lisbon** (38.72, -9.14, shot on an iPhone 14 Pro in May 2024).\n\nThe GitHub bio links **helio-labs.io** — I've tied that in as high-confidence. The origin refused a direct probe, so the domain's own pages are unread for now. Instagram (private) and an unverified phone number are still open leads. Want me to push on those?";
   for (let i = 0; i < full.length; i += 3) { emit(turnId, { type: "delta", text: full.slice(i, i + 3) }); await wait(14); }
   await wait(150);
   emit(turnId, { type: "done", text: full, costUsd: 0.0294 });
 }
 
 const api: AetherApi = {
-  platform: (q.get("platform") as string) || "darwin",
+  platform: q.get("platform") ?? "darwin",
   getSettings: async () => settings,
-  setSettings: async (patch) => (settings = { ...settings, ...patch }),
+  // Merge and hand back the whole object, like the real IPC handler — the
+  // appearance control reads the response to confirm what it just wrote.
+  setSettings: async (patch) => {
+    settings = { ...settings, ...patch };
+    return settings;
+  },
   authStatus: async () => auth,
   authLogin: async () => ({ ok: true, message: "Opened your browser to sign in…" }),
   listConversations: async () => conversations,
@@ -252,13 +303,28 @@ const api: AetherApi = {
     const c = conversations.find((x) => x.id === id);
     return c ? { conversation: c, messages: messages[id] ?? [] } : null;
   },
-  renameConversation: async () => true,
-  deleteConversation: async () => true,
+  // These mutate the seed rather than returning a bare `true`: a rename that
+  // snaps back, or a row that returns on the next refresh, reads as a bug in
+  // the component under test rather than a gap in the mock.
+  renameConversation: async (id, title) => {
+    const c = conversations.find((x) => x.id === id);
+    if (c) { c.title = title; c.updatedAt = Date.now(); }
+    return !!c;
+  },
+  deleteConversation: async (id) => {
+    const i = conversations.findIndex((x) => x.id === id);
+    if (i >= 0) { conversations.splice(i, 1); delete messages[id]; }
+    return i >= 0;
+  },
   getAttachment: async (id) => attachments[id] ?? { mimeType: "image/jpeg", dataUrl: photo("photo-1517841905240-472988babdf9", 264) },
   listGraphCases: async () => cases,
   getGraph: async (caseId) => graphs[caseId] ?? null,
   getGraphByName: async (name) => Object.values(graphs).find((g) => g.case.name === name) ?? null,
-  deleteGraph: async () => true,
+  deleteGraph: async (caseId) => {
+    const i = cases.findIndex((c) => c.id === caseId);
+    if (i >= 0) { cases.splice(i, 1); delete graphs[caseId]; }
+    return i >= 0;
+  },
   sendChat: async (req) => { void simulateTurn(req); return { conversationId: req.conversationId ?? "c1" }; },
   cancelChat: async () => {},
   updateStatusGet: async () => ({ state: "not-available", currentVersion: "2.0.1", message: "You're on the latest version." }),
@@ -274,7 +340,7 @@ const api: AetherApi = {
     detail: settings.provider === "gemini" ? (geminiSignedIn ? "Signed in as you@gmail.com" : "Sign in with your Google account to use Gemini free.") : undefined,
   }),
   setProviderKey: async (_p, key) => { providerKeySet = !!key; return { provider: settings.provider, hasKey: settings.provider === "openai" ? providerKeySet : true, models: [] }; },
-  providerLogin: async (p) => { if (p === "gemini") geminiSignedIn = true; return { ok: true, message: "Signed in as you@gmail.com ✓" }; },
+  providerLogin: async (p) => { if (p === "gemini") geminiSignedIn = true; return { ok: true, message: "Signed in as you@gmail.com" }; },
   providerLogout: async (p) => { if (p === "gemini") geminiSignedIn = false; return { provider: settings.provider, hasKey: settings.provider === "gemini" ? geminiSignedIn : true, models: settings.provider === "gemini" ? ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"] : [] }; },
 
   listModules: async () => redactMods(),

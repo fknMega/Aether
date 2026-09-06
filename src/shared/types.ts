@@ -19,6 +19,11 @@ export interface Message {
   createdAt: number;
   costUsd: number | null;
   attachments: AttachmentMeta[];
+  /** The tool calls this turn made, kept with the message. The transcript
+   *  numbers them (`02.1`, `02.2`) so a finding can be cited later — which only
+   *  works if the log survives the turn that produced it. Absent on older
+   *  messages written before the field existed. */
+  tools?: ToolActivity[];
 }
 
 export interface Conversation {
@@ -134,7 +139,13 @@ export interface AetherSettings {
 
   /** Check for app updates on launch. */
   autoUpdate: boolean;
+
+  /** Which palette the app paints in. `system` follows the OS appearance. */
+  theme: ThemePref;
 }
+
+/** The three states of the appearance control. */
+export type ThemePref = "system" | "light" | "dark";
 
 /** Live state of the auto-updater, surfaced in Settings. */
 export interface UpdateStatus {
@@ -225,3 +236,13 @@ export interface ChatRequest {
   conversationId: string | null;
   images?: OutboundImage[];
 }
+
+/** What Aether will not read, whatever the autonomy setting says. Shared so the
+ *  Settings pane states exactly what main/permissions.ts enforces, rather than
+ *  the two drifting apart. */
+export const SENSITIVE_SUMMARY = [
+  "SSH, GPG, AWS, gcloud, Kubernetes and Docker credentials",
+  "Browser profiles, cookie stores and saved logins",
+  "Shell history and .env files",
+  "Aether's own settings, module keys and sign-in tokens",
+] as const;
