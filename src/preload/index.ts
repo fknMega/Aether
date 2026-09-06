@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import { IPC } from "../shared/ipc";
 import type { AetherApi, ChatEventEnvelope } from "../shared/ipc";
+import type { InstallProgress } from "../shared/types";
 import type { ChatRequest, AetherSettings } from "../shared/types";
 
 const api: AetherApi = {
@@ -20,6 +21,16 @@ const api: AetherApi = {
   setProviderKey: (provider, key) => ipcRenderer.invoke(IPC.providerSetKey, provider, key),
   providerLogin: (provider) => ipcRenderer.invoke(IPC.providerLogin, provider),
   providerLogout: (provider) => ipcRenderer.invoke(IPC.providerLogout, provider),
+
+  toolStatuses: () => ipcRenderer.invoke(IPC.toolsStatus),
+  installTool: (moduleId) => ipcRenderer.invoke(IPC.toolInstall, moduleId),
+  installAllTools: () => ipcRenderer.invoke(IPC.toolInstallAll),
+  cancelInstall: (moduleId) => ipcRenderer.invoke(IPC.toolCancel, moduleId),
+  onInstallProgress: (cb) => {
+    const h = (_e: unknown, p: InstallProgress) => cb(p);
+    ipcRenderer.on(IPC.installProgress, h);
+    return () => ipcRenderer.removeListener(IPC.installProgress, h);
+  },
 
   listModules: () => ipcRenderer.invoke(IPC.modulesList),
   saveModule: (mod) => ipcRenderer.invoke(IPC.moduleSave, mod),

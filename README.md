@@ -104,6 +104,17 @@ an evidence log that is stored with the turn instead of vanishing when it finish
 **Light and dark, both first-class.** One palette, defined twice, with every pairing contrast-checked. The
 graph canvas reads from the same tokens as the DOM, so switching theme repaints it with no reload.
 
+**An install manager for the tools.** Roughly twenty bundled modules drive a command-line program — maigret,
+subfinder, nuclei, nmap and friends — and a module whose program is missing is a tool that always fails. Aether
+checks what's on your machine, installs the rest with whichever package manager you actually have (Homebrew,
+pipx, go install, gem), and streams the output while it works. First launch offers to do the lot in one click.
+
+Two things it will not do: run anything as root, or install without a click. When the only route needs `sudo`,
+you get the exact command to paste instead of a shrug. And because a GUI app inherits launchd's bare PATH
+rather than your shell's, Aether repairs PATH at startup — Homebrew, `~/.local/bin`, `~/go/bin`, `~/.cargo/bin`
+and the rest — then asks your login shell for the real thing, so tools installed with a version manager are
+found too. That single fix is the difference between "installed" and "command not found".
+
 **A built-in Sherlock.** `username_search` checks a handle across dozens of platforms at once, no Python and no
 setup, and tells you where a public profile exists.
 

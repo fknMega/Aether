@@ -23,6 +23,11 @@ const PRIVATE_DIR = packaged ? join(app.getPath("userData"), "private") : join(P
 
 for (const dir of [DATA_DIR, WORKSPACE]) mkdirSync(dir, { recursive: true });
 
+/** Keys that came from private/.env. Command modules get a scrubbed environment
+ *  so one module cannot read another module's key, or the operator's, just by
+ *  printing its own env. */
+export const dotEnvKeys = new Set<string>();
+
 /** Minimal dotenv: load private/.env into process.env without a dependency. */
 function loadDotEnv(path: string): void {
   if (!existsSync(path)) return;
@@ -36,7 +41,7 @@ function loadDotEnv(path: string): void {
     if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
       val = val.slice(1, -1);
     }
-    if (key && process.env[key] === undefined) process.env[key] = val;
+    if (key && process.env[key] === undefined) { process.env[key] = val; dotEnvKeys.add(key); }
   }
 }
 loadDotEnv(join(PRIVATE_DIR, ".env"));
@@ -60,6 +65,7 @@ const DEFAULT_SETTINGS: AetherSettings = {
 
   autoUpdate: true,
   theme: (process.env.AETHER_THEME as AetherSettings["theme"]) ?? "system",
+  setupDone: false,
 };
 
 export const paths = {

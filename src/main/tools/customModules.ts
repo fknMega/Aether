@@ -10,7 +10,7 @@
 import { tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import { exec } from "node:child_process";
-import { paths } from "../config";
+import { paths, dotEnvKeys } from "../config";
 import { modules, type LiveModule } from "../modules";
 import type { ToolContext } from "./context";
 import { text } from "./context";
@@ -36,7 +36,13 @@ function commandTool(m: LiveModule & { toolName: string }, ctx: ToolContext): Sd
       const arg = input ?? "";
       const cmd = (m.command || "").replaceAll("{input}", shellQuote(arg));
       if (!cmd.trim()) return text(`Module "${m.name}" has no command configured.`, true);
+      // Scrubbed: a command module gets the process environment MINUS every key
+      // loaded from private/.env, plus only its own secrets. Handing every
+      // module the full env meant one module's command could print another
+      // module's API key — and the operator's — straight to stdout, which then
+      // goes to the model.
       const env: NodeJS.ProcessEnv = { ...process.env, AETHER_INPUT: arg };
+      for (const k of dotEnvKeys) delete env[k];
       for (const [k, v] of Object.entries(m.secretValues)) env[k] = v;
       return await new Promise((resolve) => {
         exec(cmd, { cwd: paths.workspace, timeout: 90_000, maxBuffer: 4 << 20, env }, (err, stdout, stderr) => {

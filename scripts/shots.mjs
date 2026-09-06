@@ -26,6 +26,8 @@ const SHOTS = [
   ["welcome",    "view=chat&empty=1"],
   ["modules",    "view=settings&tab=Modules"],
   ["providers",  "view=settings&tab=Model"],
+  ["tools",      "view=settings&tab=Modules"],
+  ["setup",      "setup=1"],
 ];
 
 /** The graph settles under a force simulation, so a fixed delay is the honest

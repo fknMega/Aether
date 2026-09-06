@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useStore } from "../state/store";
 import { SENSITIVE_SUMMARY, type ModuleConfig, type ModuleSecret, type ModuleHeader, type ThemePref } from "../../shared/types";
 import { IPlus, ITrash, IEdit, IClose, ISearch, IKey, IDiscord, IHeart } from "./icons";
+import { ToolManager } from "./ToolManager";
 
 
 const MODELS = [
@@ -360,6 +361,16 @@ function ModulesPane() {
         <span className="flabel">Modules</span>
         <div className="desc">Capabilities Aether can reach for. Toggle the built-ins and the bundled tools, or add your own — a local <b>command</b> Aether can run, or an <b>API</b> called with your keys. Each enabled module becomes a tool Aether uses when its description fits.</div>
       </div>
+
+      <div className="sec">
+        <span>Command-line tools</span>
+        <span className="lead" />
+      </div>
+      <div className="desc">
+        Some bundled modules drive a program on your machine. A module whose program is missing
+        is a tool that always fails, so this is where you install them.
+      </div>
+      <ToolManager />
 
       <div className="sec"><span>Built-in</span><span className="lead" /></div>
       <div className="mod-list">{builtins.map(Row)}</div>

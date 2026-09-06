@@ -5,6 +5,7 @@ import { IPC } from "../shared/ipc";
 import { paths, runtime, loadSettings } from "./config";
 import { store } from "./store";
 import { modules } from "./modules";
+import { toolStatuses, installTool, installMissing, cancelInstall, toolFor } from "./installer";
 import { runTurn, resetToolServer } from "./agent";
 import { buildToolList } from "./tools";
 import { runChatTurn, listOllamaModels } from "./chatEngine";
@@ -15,9 +16,11 @@ import { secrets, OPENAI_KEY } from "./secrets";
 import { decodeImages, writeAttachments, attachedImagesBlock } from "./images";
 import { authStatus, authLogin } from "./auth";
 import type { ToolContext } from "./tools/context";
-import type { AetherSettings, ChatRequest, ModuleConfig, Provider, ProviderStatus, ToolActivity } from "../shared/types";
+import type { AetherSettings, ChatRequest, ModuleConfig, Provider, ProviderStatus, ToolActivity, InstallProgress } from "../shared/types";
 
 let settings: AetherSettings = loadSettings();
+/** Set by a cancel while an "install all" run is walking the catalog. */
+let stopInstallAll = false;
 const activeTurns = new Map<string, AbortController>();
 
 function broadcast(channel: string, payload: unknown): void {
@@ -96,6 +99,7 @@ function sanitizeSettings(patch: Partial<AetherSettings>): Partial<AetherSetting
   if (typeof patch.autonomy === "boolean") out.autonomy = patch.autonomy;
   if (typeof patch.autoUpdate === "boolean") out.autoUpdate = patch.autoUpdate;
   if (["system", "light", "dark"].includes(patch.theme as string)) out.theme = patch.theme;
+  if (typeof patch.setupDone === "boolean") out.setupDone = patch.setupDone;
   if (["claude", "openai", "ollama", "gemini"].includes(patch.provider as string)) out.provider = patch.provider;
   for (const k of ["openaiBaseUrl", "openaiModel", "ollamaBaseUrl", "ollamaModel", "geminiModel"] as const) {
     if (typeof patch[k] === "string") out[k] = (patch[k] as string).slice(0, 300);
@@ -205,6 +209,28 @@ export function registerIpc(): void {
   ipcMain.handle(IPC.providerLogout, async (_e, provider: Provider) => {
     if (provider === "gemini") geminiLogout();
     return providerStatus();
+  });
+
+  // ── tool installer ────────────────────────────────────────────────────────
+  // Recipes are constants in installer.ts. Nothing the renderer sends is ever
+  // interpolated into a command — the only thing it chooses is WHICH tool.
+  const moduleName = (id: string) => modules.list().find((m) => m.id === id)?.name ?? id;
+  const emitProgress = (p: InstallProgress) => broadcast(IPC.installProgress, p);
+
+  ipcMain.handle(IPC.toolsStatus, () => toolStatuses(moduleName));
+  ipcMain.handle(IPC.toolInstall, (_e, moduleId: string) => {
+    if (typeof moduleId !== "string" || !toolFor(moduleId)) return false;
+    return installTool(moduleId, emitProgress);
+  });
+  ipcMain.handle(IPC.toolInstallAll, async () => {
+    stopInstallAll = false;
+    const summary = await installMissing(emitProgress, () => stopInstallAll);
+    emitProgress({ moduleId: "", state: "installed", summary });
+    return summary;
+  });
+  ipcMain.handle(IPC.toolCancel, (_e, moduleId?: string) => {
+    stopInstallAll = true;
+    if (typeof moduleId === "string" && moduleId) cancelInstall(moduleId);
   });
 
   ipcMain.handle(IPC.modulesList, () => modules.list());

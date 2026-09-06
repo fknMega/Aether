@@ -6,7 +6,7 @@
 import type { AetherApi, ChatEventEnvelope, ConversationDetail, AttachmentPayload } from "../../shared/ipc";
 import type {
   AetherSettings, AuthStatus, Conversation, Message, CaseGraph, GraphCaseInfo,
-  GraphNode, GraphEdge, ChatRequest, AgentEvent, ModuleConfig,
+  GraphNode, GraphEdge, ChatRequest, AgentEvent, ModuleConfig, ToolStatus, InstallProgress,
 } from "../../shared/types";
 
 const q = new URLSearchParams(location.search);
@@ -38,6 +38,8 @@ let settings: AetherSettings = {
   geminiModel: "gemini-2.5-pro",
   autoUpdate: true,
   theme: themeParam,
+  // ?setup=1 replays the first-run experience.
+  setupDone: !q.has("setup"),
 };
 
 let providerKeySet = false;
@@ -287,6 +289,55 @@ async function simulateTurn(req: ChatRequest) {
   emit(turnId, { type: "done", text: full, costUsd: 0.0294 });
 }
 
+// ── tool installer (preview) ────────────────────────────────────────────────
+// A mix of states so every branch of the install manager is reachable without
+// touching the real machine: installed, missing, and needs-a-manual-command.
+const TOOL_SEED: Array<[string, string, ToolStatus["state"]]> = [
+  ["def:maigret", "maigret", "installed"], ["def:holehe", "holehe", "installed"],
+  ["def:socialscan", "socialscan", "missing"], ["def:phoneinfoga", "phoneinfoga", "missing"],
+  ["def:whatweb", "whatweb", "installed"], ["def:wafw00f", "wafw00f", "missing"],
+  ["def:httpx", "httpx", "installed"], ["def:tlsx", "tlsx", "missing"],
+  ["def:sslscan", "sslscan", "missing"], ["def:subfinder", "subfinder", "installed"],
+  ["def:amass-passive", "amass", "missing"], ["def:assetfinder", "assetfinder", "missing"],
+  ["def:waybackurls", "waybackurls", "installed"], ["def:gau", "gau", "missing"],
+  ["def:katana", "katana", "missing"], ["def:nuclei", "nuclei", "installed"],
+  ["def:nikto", "nikto", "unavailable"], ["def:wpscan", "wpscan", "missing"],
+  ["def:dnsx", "dnsx", "missing"], ["def:cdncheck", "cdncheck", "missing"],
+  ["def:naabu", "naabu", "missing"], ["def:nmap", "nmap", "installed"],
+];
+const toolState = new Map(TOOL_SEED.map(([id, bin, st]) => [id, { bin, state: st }]));
+let installCbs: Array<(p: InstallProgress) => void> = [];
+let stopAll = false;
+const emitInstall = (p: InstallProgress) => installCbs.forEach((cb) => cb(p));
+
+function toolRows(): ToolStatus[] {
+  return TOOL_SEED.map(([id, bin]) => {
+    const st = toolState.get(id)!;
+    const mod = mods.find((m) => m.id === id);
+    return {
+      moduleId: id, name: mod?.name ?? bin, bin, state: st.state,
+      path: st.state === "installed" ? `/opt/homebrew/bin/${bin}` : undefined,
+      via: st.state === "missing" ? `brew install ${bin}` : undefined,
+      manual: st.state === "unavailable" ? `sudo apt install -y ${bin}` : undefined,
+    };
+  });
+}
+
+async function fakeInstall(id: string): Promise<boolean> {
+  const st = toolState.get(id);
+  if (!st || st.state === "installed" || st.state === "unavailable") return false;
+  st.state = "installing";
+  emitInstall({ moduleId: id, state: "installing", line: `$ brew install ${st.bin}` });
+  for (const line of [`==> Fetching ${st.bin}`, "==> Downloading from ghcr.io", `==> Pouring ${st.bin}.bottle.tar.gz`]) {
+    await new Promise((r) => setTimeout(r, 240));
+    emitInstall({ moduleId: id, state: "installing", line });
+  }
+  await new Promise((r) => setTimeout(r, 180));
+  st.state = "installed";
+  emitInstall({ moduleId: id, state: "installed", line: `/opt/homebrew/bin/${st.bin}` });
+  return true;
+}
+
 const api: AetherApi = {
   platform: q.get("platform") ?? "darwin",
   getSettings: async () => settings,
@@ -342,6 +393,27 @@ const api: AetherApi = {
   setProviderKey: async (_p, key) => { providerKeySet = !!key; return { provider: settings.provider, hasKey: settings.provider === "openai" ? providerKeySet : true, models: [] }; },
   providerLogin: async (p) => { if (p === "gemini") geminiSignedIn = true; return { ok: true, message: "Signed in as you@gmail.com" }; },
   providerLogout: async (p) => { if (p === "gemini") geminiSignedIn = false; return { provider: settings.provider, hasKey: settings.provider === "gemini" ? geminiSignedIn : true, models: settings.provider === "gemini" ? ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"] : [] }; },
+
+  toolStatuses: async () => toolRows(),
+  installTool: async (id: string) => fakeInstall(id),
+  installAllTools: async () => {
+    let installed = 0, skipped = 0;
+    for (const [id] of TOOL_SEED) {
+      if (stopAll) break;
+      const st = toolState.get(id)!;
+      if (st.state === "installed" || st.state === "unavailable") { skipped++; continue; }
+      if (await fakeInstall(id)) installed++;
+    }
+    stopAll = false;
+    const summary = { installed, failed: 0, skipped };
+    emitInstall({ moduleId: "", state: "installed", summary });
+    return summary;
+  },
+  cancelInstall: async () => { stopAll = true; },
+  onInstallProgress: (cb) => {
+    installCbs.push(cb);
+    return () => { installCbs = installCbs.filter((c) => c !== cb); };
+  },
 
   listModules: async () => redactMods(),
   saveModule: async (mod) => {

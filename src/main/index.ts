@@ -1,8 +1,14 @@
 import { app, BrowserWindow, shell } from "electron";
 import { join } from "node:path";
 import { registerIpc, applyTheme, bootTheme, TITLEBAR_H } from "./ipc";
+import { repairPath, repairPathFromLoginShell } from "./env";
 
 const isDev = !app.isPackaged;
+
+// Before anything spawns a child process. A packaged app inherits launchd's
+// bare PATH, not the user's shell PATH, so without this every Homebrew / pipx /
+// go-install binary is invisible and command modules fail with "not found".
+repairPath();
 
 function createWindow(): void {
   // Resolve the saved appearance BEFORE the window exists, so the very first
@@ -65,6 +71,10 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     registerIpc();
     createWindow();
+    // The login-shell probe sources the user's rc files, so it can be slow on a
+    // heavy setup. It runs after the window is up and only ever widens PATH —
+    // repairPath() has already covered the common cases synchronously.
+    void repairPathFromLoginShell();
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });

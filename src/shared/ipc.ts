@@ -5,6 +5,7 @@
 import type {
   AetherSettings, AuthStatus, ChatRequest, Conversation, Message,
   CaseGraph, GraphCaseInfo, AgentEvent, ModuleConfig, ProviderStatus, Provider, UpdateStatus,
+  ToolStatus, InstallProgress,
 } from "./types";
 
 export const IPC = {
@@ -21,6 +22,11 @@ export const IPC = {
   providerSetKey: "provider:setKey",
   providerLogin: "provider:login",
   providerLogout: "provider:logout",
+
+  toolsStatus: "tools:status",
+  toolInstall: "tools:install",
+  toolInstallAll: "tools:installAll",
+  toolCancel: "tools:cancel",
 
   modulesList: "modules:list",
   moduleSave: "modules:save",
@@ -46,6 +52,7 @@ export const IPC = {
   graphChanged: "graph:changed",
   conversationsChanged: "conversations:changed",
   modulesChanged: "modules:changed",
+  installProgress: "tools:progress",
   updateStatus: "update:status",
 } as const;
 
@@ -90,6 +97,17 @@ export interface AetherApi {
   providerLogin(provider: Provider): Promise<{ ok: boolean; message: string }>;
   /** Sign out of an OAuth provider (clears stored tokens). */
   providerLogout(provider: Provider): Promise<ProviderStatus>;
+
+  /** Command-line tools the bundled modules wrap: what is installed, and what
+   *  it would take to install the rest. */
+  toolStatuses(): Promise<ToolStatus[]>;
+  /** Install one tool. Resolves when it finishes; progress streams separately. */
+  installTool(moduleId: string): Promise<boolean>;
+  /** Install everything missing, serially. */
+  installAllTools(): Promise<{ installed: number; failed: number; skipped: number }>;
+  /** Stop an in-flight install (or the whole run, with no argument). */
+  cancelInstall(moduleId?: string): Promise<void>;
+  onInstallProgress(cb: (p: InstallProgress) => void): () => void;
 
   /** Modules (secrets redacted — values never leave the main process). */
   listModules(): Promise<ModuleConfig[]>;

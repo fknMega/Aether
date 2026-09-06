@@ -676,10 +676,52 @@ select { cursor: pointer; }
 }
 .add-row:hover { background: var(--fill-strong); }
 
+/* ── tool installer ──────────────────────────────────────────────────────── */
+.tool-summary {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4); margin-bottom: var(--sp-3);
+  background: var(--surface); border-radius: var(--r); box-shadow: var(--shadow-card);
+}
+.tool-summary .grow { flex: 1 1 auto; min-width: 0; }
+.tool-summary .t { font-size: var(--fs-body); font-weight: 590; }
+.tool-summary .s { font-size: var(--fs-foot); color: var(--label-3); margin-top: 1px; }
+
+.tool-list .row { min-height: 52px; }
+.tool-name { display: flex; flex-direction: column; min-width: 0; flex: 0 1 auto; gap: 1px; }
+.tool-name .lbl { font-weight: 590; font-size: var(--fs-body); }
+.tool-sub {
+  font-family: var(--font-mono); font-size: var(--fs-caption); color: var(--label-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tool-item.installed > .gut { color: var(--ok); }
+.tool-item.installing > .gut { color: var(--accent); animation: pulse 1.4s var(--ease) infinite; }
+.tool-item.unavailable > .gut, .tool-item.failed > .gut { color: var(--warn); }
+.tool-item.failed .tool-sub { color: var(--bad); }
+.tool-item.installed .tool-name .lbl { color: var(--label-2); font-weight: 500; }
+@keyframes pulse { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
+
+/* Installer output. A progress view, not a terminal — fixed height, no wrap. */
+.install-log {
+  max-height: 132px; overflow-y: auto; margin-bottom: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--surface-2); border-radius: var(--r);
+  font-family: var(--font-mono); font-size: var(--fs-caption); line-height: 1.55;
+  color: var(--label-3); user-select: text;
+}
+.install-log > div { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.modal.setup { width: 620px; }
+.modal.setup .modal-body { padding-bottom: var(--sp-4); }
+
 /* ── sheets ──────────────────────────────────────────────────────────────── */
 .scrim {
   position: fixed; inset: 0; z-index: 60;
-  display: grid; place-items: center; padding: var(--sp-6) var(--sp-4);
+  /* Explicit minmax(0,1fr) tracks, not `auto`. An auto track is sized to the
+     item's max-content, which leaves the item's containing block indefinite —
+     so `max-height: 100%` on the sheet never resolves and a long modal grows
+     straight past the bottom of the window, taking its footer with it. */
+  display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); place-items: center;
+  padding: var(--sp-6) var(--sp-4);
   background: var(--scrim); backdrop-filter: blur(3px);
   animation: fade var(--t-2) var(--ease);
 }
@@ -697,7 +739,7 @@ select { cursor: pointer; }
 .modal-head { border-bottom: 1px solid var(--separator); }
 .modal-foot { border-top: 1px solid var(--separator); }
 .modal-head h2 { font-size: var(--fs-head); font-weight: 640; margin: 0; flex: 1 1 auto; }
-.modal-body { padding: var(--sp-4); overflow-y: auto; min-height: 0; }
+.modal-body { padding: var(--sp-4); overflow-y: auto; min-height: 0; flex: 1 1 auto; }
 .note { font-size: var(--fs-caption); color: var(--label-3); }
 
 /* ── graph ───────────────────────────────────────────────────────────────── */

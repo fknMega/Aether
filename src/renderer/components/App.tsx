@@ -8,6 +8,7 @@ import { Chat } from "./Chat";
 import { GraphView } from "../graph/GraphView";
 import { Settings } from "./Settings";
 import { Onboarding } from "./Onboarding";
+import { Setup } from "./Setup";
 
 /** The only values the stylesheet has titlebar insets for. Stamping the raw
  *  value put `data-platform="undefined"` on <html> wherever the bridge does not
@@ -18,6 +19,7 @@ const PLATFORMS = new Set(["darwin", "win32", "linux"]);
 
 export function App() {
   const view = useStore((s) => s.view);
+  const settings = useStore((s) => s.settings);
   const auth = useStore((s) => s.auth);
   const theme = useStore((s) => s.settings?.theme);
   const dismissedAuthGate = useStore((s) => s.dismissedAuthGate);
@@ -29,6 +31,7 @@ export function App() {
   const reloadActiveMessages = useStore((s) => s.reloadActiveMessages);
   const refreshModules = useStore((s) => s.refreshModules);
   const setUpdateStatus = useStore((s) => s.setUpdateStatus);
+  const handleInstallProgress = useStore((s) => s.handleInstallProgress);
 
   useEffect(() => {
     const platform = window.aether.platform;
@@ -39,7 +42,8 @@ export function App() {
     const off3 = window.aether.onConversationsChanged(() => { void refreshConversations(); void reloadActiveMessages(); });
     const off4 = window.aether.onModulesChanged(() => { void refreshModules(); });
     const off5 = window.aether.onUpdateStatus((st) => setUpdateStatus(st));
-    return () => { off1(); off2(); off3(); off4(); off5(); };
+    const off6 = window.aether.onInstallProgress((p) => handleInstallProgress(p));
+    return () => { off1(); off2(); off3(); off4(); off5(); off6(); };
   }, []);
 
   // Settings load asynchronously; until they arrive the OS appearance wins.
@@ -58,6 +62,8 @@ export function App() {
       </div>
       <StatusLine />
       {auth && !auth.loggedIn && !dismissedAuthGate && <Onboarding />}
+      {/* Sign-in comes first; setup is the next thing a new user sees. */}
+      {settings && !settings.setupDone && (!auth || auth.loggedIn || dismissedAuthGate) && <Setup />}
     </div>
   );
 }

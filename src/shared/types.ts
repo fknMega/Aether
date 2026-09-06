@@ -142,6 +142,10 @@ export interface AetherSettings {
 
   /** Which palette the app paints in. `system` follows the OS appearance. */
   theme: ThemePref;
+
+  /** False until the first-run setup has been shown and dismissed or completed.
+   *  Setup offers to install the command-line tools the bundled modules wrap. */
+  setupDone: boolean;
 }
 
 /** The three states of the appearance control. */
@@ -235,6 +239,43 @@ export interface ChatRequest {
   message: string;
   conversationId: string | null;
   images?: OutboundImage[];
+}
+
+// ── tool installer ───────────────────────────────────────────────────────────
+// Many bundled modules wrap a command-line binary. These describe whether that
+// binary is present and what it would take to get it.
+
+export type ToolInstallState =
+  | "installed"     // on PATH now
+  | "missing"       // not installed, but we can install it here
+  | "installing"
+  | "failed"
+  | "unavailable";  // no package manager here, or the only route needs root
+
+export interface ToolStatus {
+  moduleId: string;
+  /** The module's display name, so the UI does not have to join two lists. */
+  name: string;
+  /** The executable that must be on PATH. */
+  bin: string;
+  state: ToolInstallState;
+  /** Where it was found, when installed. */
+  path?: string;
+  /** The command Aether would run to install it. */
+  via?: string;
+  /** The command for the USER to run, when Aether will not (root, or no manager). */
+  manual?: string;
+  error?: string;
+}
+
+/** Streamed while an install runs. */
+export interface InstallProgress {
+  moduleId: string;
+  state: ToolInstallState;
+  line?: string;
+  error?: string;
+  /** Set on the final event of an "install all" run. */
+  summary?: { installed: number; failed: number; skipped: number };
 }
 
 /** What Aether will not read, whatever the autonomy setting says. Shared so the

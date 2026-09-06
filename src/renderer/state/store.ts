@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type {
   AetherSettings, AuthStatus, Conversation, Message, ToolActivity,
   GraphCaseInfo, CaseGraph, OutboundImage, ModuleConfig, ProviderStatus, Provider, UpdateStatus,
+  ToolStatus, InstallProgress,
 } from "../../shared/types";
 import type { ChatEventEnvelope } from "../../shared/ipc";
 
@@ -40,6 +41,14 @@ interface Store {
   providerStatus: ProviderStatus | null;
   updateStatus: UpdateStatus | null;
 
+  /** Command-line tools the bundled modules wrap. */
+  tools: ToolStatus[];
+  /** Rolling installer output, newest last. Capped — this is a progress view,
+   *  not a log file. */
+  installLog: string[];
+  /** True while an "install all" run is walking the catalog. */
+  installingAll: boolean;
+
   init(): Promise<void>;
   setView(v: View): void;
   dismissAuthGate(): void;
@@ -55,6 +64,12 @@ interface Store {
   checkForUpdate(): Promise<void>;
   installUpdate(): Promise<void>;
   setUpdateStatus(s: UpdateStatus): void;
+
+  refreshTools(): Promise<void>;
+  installTool(moduleId: string): Promise<void>;
+  installAllTools(): Promise<void>;
+  cancelInstall(moduleId?: string): Promise<void>;
+  handleInstallProgress(p: InstallProgress): void;
 
   refreshModules(): Promise<void>;
   saveModule(mod: ModuleConfig): Promise<void>;
@@ -95,6 +110,9 @@ export const useStore = create<Store>((set, get) => ({
   activeCaseId: null,
   graph: null,
   modules: [],
+  tools: [],
+  installLog: [],
+  installingAll: false,
   providerStatus: null,
   updateStatus: null,
 
@@ -105,6 +123,8 @@ export const useStore = create<Store>((set, get) => ({
     set({ settings, auth, conversations, cases, modules });
     void get().refreshProviderStatus();
     void get().refreshUpdateStatus();
+    // Probing PATH for two dozen binaries takes a moment; never block the boot.
+    void get().refreshTools();
   },
 
   setView(v) { set({ view: v }); },
@@ -121,6 +141,38 @@ export const useStore = create<Store>((set, get) => ({
   async checkForUpdate() { set({ updateStatus: await A.checkForUpdate() }); },
   async installUpdate() { await A.installUpdate(); },
   setUpdateStatus(s) { set({ updateStatus: s }); },
+
+  async refreshTools() { set({ tools: await A.toolStatuses() }); },
+
+  async installTool(moduleId) {
+    // Optimistic: the first progress event confirms it, and a failure overwrites
+    // it — but the row must react on click, not two seconds later.
+    set({ tools: get().tools.map((t) => (t.moduleId === moduleId ? { ...t, state: "installing" } : t)) });
+    await A.installTool(moduleId);
+    void get().refreshTools();
+  },
+
+  async installAllTools() {
+    set({ installingAll: true, installLog: [] });
+    try { await A.installAllTools(); }
+    finally { set({ installingAll: false }); void get().refreshTools(); }
+  },
+
+  async cancelInstall(moduleId) {
+    await A.cancelInstall(moduleId);
+    set({ installingAll: false });
+    void get().refreshTools();
+  },
+
+  handleInstallProgress(p) {
+    const s = get();
+    if (p.summary) { set({ installingAll: false }); return; }
+    const tools = p.moduleId
+      ? s.tools.map((t) => (t.moduleId === p.moduleId ? { ...t, state: p.state, error: p.error ?? t.error } : t))
+      : s.tools;
+    const log = p.line ? [...s.installLog, p.line].slice(-200) : s.installLog;
+    set({ tools, installLog: log });
+  },
 
   async refreshModules() { set({ modules: await A.listModules() }); },
   async saveModule(mod) { set({ modules: await A.saveModule(mod) }); },
