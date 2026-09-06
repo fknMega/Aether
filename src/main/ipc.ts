@@ -6,6 +6,7 @@ import { paths, runtime, loadSettings } from "./config";
 import { store } from "./store";
 import { modules } from "./modules";
 import { runTurn, resetToolServer } from "./agent";
+import { buildToolList } from "./tools";
 import { runChatTurn, listOllamaModels } from "./chatEngine";
 import { runGeminiTurn } from "./geminiEngine";
 import { geminiSignedIn, geminiEmail, geminiLogin, geminiLogout } from "./geminiAuth";
@@ -182,6 +183,14 @@ export function registerIpc(): void {
   ipcMain.handle(IPC.updateCheck, () => checkForUpdates());
   ipcMain.handle(IPC.updateInstall, () => installUpdate());
   configureUpdater((st) => broadcast(IPC.updateStatus, st), settings.autoUpdate !== false);
+
+  // Warm the tool list once at startup so private code connectors (e.g. nesher)
+  // show up in Settings → Modules immediately, instead of only after the first
+  // chat turn builds the tool server. When it resolves, nudge the renderer to
+  // re-fetch the list.
+  void buildToolList(toolCtx)
+    .then(() => broadcast(IPC.modulesChanged, null))
+    .catch((e) => console.error("[aether] connector warm-up failed:", e));
 
   ipcMain.handle(IPC.providerStatus, () => providerStatus());
   ipcMain.handle(IPC.providerSetKey, async (_e, provider: Provider, key: string) => {
