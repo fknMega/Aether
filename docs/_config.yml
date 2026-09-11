@@ -1,0 +1,8 @@
+title: Aether
+description: An AI-driven OSINT analyst on your desktop — setup guides for macOS and Windows.
+theme: jekyll-theme-cayman
+show_downloads: false
+# Pictures and the README's own images live under docs/media; nothing here is a
+# Jekyll collection, so every .md at this level is a page.
+exclude:
+  - README.md
