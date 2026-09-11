@@ -23,7 +23,7 @@ Prefer to run from source? Install Node LTS and Git, then:
 winget install -e --id OpenJS.NodeJS.LTS
 winget install -e --id Git.Git --scope user
 git clone https://github.com/fknMega/Aether.git
-cd Aether
+cd Aether/app
 npm install
 npm run dev
 ```
@@ -144,5 +144,5 @@ their row starts "Install … yourself" and gives the download or clone steps in
 **`pipx` isn't recognised in my terminal.** `py -m pipx ensurepath`, then a new terminal. Aether calls pipx through
 `py -m pipx` itself, so it works either way.
 
-**The Claude sign-in opened nothing.** Sign in from a terminal in the project folder with `npm run login` (source
+**The Claude sign-in opened nothing.** Sign in from a terminal in the `app` folder with `npm run login` (source
 install), then **Settings → General → Recheck** (the pane also re-reads the status each time you open it).

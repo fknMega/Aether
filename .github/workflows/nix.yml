@@ -16,22 +16,25 @@ on:
   push:
     branches: [master]
     paths:
-      - "flake.nix"
-      - "flake.lock"
-      - "package.json"
-      - "package-lock.json"
+      - "app/flake.nix"
+      - "app/flake.lock"
+      - "app/package.json"
+      - "app/package-lock.json"
       - ".github/workflows/nix.yml"
   pull_request:
     paths:
-      - "flake.nix"
-      - "flake.lock"
-      - "package.json"
-      - "package-lock.json"
+      - "app/flake.nix"
+      - "app/flake.lock"
+      - "app/package.json"
+      - "app/package-lock.json"
   workflow_dispatch:
 
 jobs:
   flake:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
     steps:
       - uses: actions/checkout@v4
 

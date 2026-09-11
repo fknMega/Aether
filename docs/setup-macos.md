@@ -22,7 +22,7 @@ Prefer to run from source? You need Node 18 or newer (`brew install node`):
 
 ```bash
 git clone https://github.com/fknMega/Aether.git
-cd Aether
+cd Aether/app
 npm install
 npm run dev
 ```
@@ -121,6 +121,6 @@ warning about *other* taps on your machine is Homebrew talking about them, not a
 PATH at start (Homebrew, `~/.local/bin`, `~/go/bin`, gem bin dirs) and asks your login shell for the rest. If you
 installed something in an unusual place, add it to your shell's PATH and restart Aether.
 
-**Sign-in to Claude never completes.** Run `npm run login` from the project folder (source install) or check
+**Sign-in to Claude never completes.** Run `npm run login` from the `app` folder (source install) or check
 that the browser window finished; **Settings → General → Recheck** re-reads the status, and the pane re-reads it
 on its own each time you open it.

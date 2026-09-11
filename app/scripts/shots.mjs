@@ -1,8 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Regenerate the README screenshots.
 //
-//   npm run preview:web      # in one terminal — serves the renderer on :5199
-//   npm run shots            # in another
+//   npm run preview:web      # in one terminal (from app/) — serves the renderer on :5199
+//   npm run shots            # in another; writes to ../docs/media
 //
 // Drives the real renderer against the mocked bridge in an Electron window and
 // writes PNGs to docs/media. No Playwright, no Puppeteer — Electron is already
@@ -15,7 +15,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const ORIGIN = process.env.AETHER_PREVIEW ?? "http://localhost:5199";
-const OUT = resolve(import.meta.dirname, "..", "docs", "media");
+const OUT = resolve(import.meta.dirname, "..", "..", "docs", "media");
 const W = 1440, H = 872;
 
 /** Each shot is [filename, query]. Both themes are rendered for every view. */

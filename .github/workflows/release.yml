@@ -1,5 +1,6 @@
 # Build Aether for macOS and Windows and publish a GitHub Release.
-# Trigger by pushing a version tag, e.g.  git tag v2.0.2 && git push origin v2.0.2
+# The desktop app lives in app/. Trigger by pushing a version tag, e.g.
+# git tag v2.0.2 && git push origin v2.0.2
 # (or run it by hand from the Actions tab). CI's GITHUB_TOKEN publishes the
 # release, so no personal token is needed.
 name: Release
@@ -23,12 +24,16 @@ jobs:
           - os: windows-latest
             build: npm run dist:win
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: app
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
+          cache-dependency-path: app/package-lock.json
       - run: npm ci
       - name: Build and publish
         run: ${{ matrix.build }} -- --publish always

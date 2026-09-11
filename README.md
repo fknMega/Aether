@@ -194,11 +194,12 @@ when the model you picked can't call tools or can't hold that much context.
 [Windows](https://fknmega.github.io/Aether/setup-windows.html) · [choosing a model](https://fknmega.github.io/Aether/providers.html) ·
 [modules, tools and access](https://fknmega.github.io/Aether/modules.html) — the same pages are in [`docs/`](docs/).
 
-Installers for both are on [Releases](https://github.com/fknMega/Aether/releases). From source:
+Installers for both are on [Releases](https://github.com/fknMega/Aether/releases). From source — the desktop
+app lives in [`app/`](app/):
 
 ```bash
 git clone https://github.com/fknMega/Aether.git
-cd Aether
+cd Aether/app
 npm install
 npm run dev
 ```
@@ -209,10 +210,12 @@ database to run and no native toolchain to install, and state is a plain JSON fi
 
 ### Nix
 
-There's a flake, so `nix develop` gets you a shell with the right Node, the nixpkgs Electron (no postinstall
-binary download), and — on Linux — the Chromium runtime libraries that otherwise fail at window creation.
+There's a flake in `app/`, so `nix develop` there gets you a shell with the right Node, the nixpkgs Electron
+(no postinstall binary download), and — on Linux — the Chromium runtime libraries that otherwise fail at
+window creation.
 
 ```bash
+cd app
 nix develop          # dev shell, then: npm install && npm run dev
 nix build            # Linux package; see the note in flake.nix about npmDepsHash
 ```
@@ -223,6 +226,7 @@ yours rather than one baked in by whoever wrote the flake.
 ## Building an app
 
 ```bash
+cd app
 npm run dist:mac   # .dmg and .zip, built on macOS
 npm run dist:win   # .exe installer, built on Windows
 ```

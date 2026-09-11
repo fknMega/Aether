@@ -10,6 +10,10 @@ workspace/
 .aether-token
 data/
 
+# ── the hosted product ──
+# web/ is Aether's SaaS — its own private repository beside the public app.
+web/
+
 # ── PRIVATE — never publish ──
 # Licensed breach connector, account-recovery doctrine, secrets, and the old
 # pre-rebuild code all live here and stay off GitHub.

@@ -4,7 +4,7 @@
     {
       "name": "preview-web",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "preview:web"],
+      "runtimeArgs": ["--prefix", "app", "run", "preview:web"],
       "port": 5199
     }
   ]
