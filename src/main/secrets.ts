@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Encrypted secret store for provider API keys (e.g. the OpenAI key).
+// Encrypted secret store for provider API keys (OpenAI, Gemini).
 // Same rules as module secrets: encrypted at rest with the OS keychain via
 // Electron safeStorage, and the plaintext never leaves the main process — the
 // renderer only ever learns whether a key is set.
@@ -52,6 +52,7 @@ export const secrets = {
 };
 
 export const OPENAI_KEY = "OPENAI_API_KEY";
-/** Google OAuth token bundle for Gemini (JSON: refresh/access token, expiry,
- *  discovered Code Assist project, email). Encrypted at rest like any secret. */
-export const GEMINI_OAUTH = "GEMINI_OAUTH";
+/** A Gemini Developer API key from Google AI Studio. (Earlier builds stored a
+ *  Google OAuth bundle under "GEMINI_OAUTH" for the Code Assist path; that
+ *  path was shut down by Google and the entry, if present, is simply unused.) */
+export const GEMINI_KEY = "GEMINI_API_KEY";

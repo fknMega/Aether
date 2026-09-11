@@ -7,6 +7,7 @@ import { systemPrompt } from "./prompt";
 import { findClaudeBinary } from "./auth";
 import { buildToolServer } from "./tools";
 import { makePolicy, SANDBOX_DENY_READ } from "./permissions";
+import { titleFor } from "./engineShared";
 import type { ToolContext } from "./tools/context";
 import type { AetherSettings, AgentEvent, ToolActivity } from "../shared/types";
 
@@ -21,30 +22,9 @@ function friendlyToolName(raw: string): string {
   return raw.replace(/^mcp__[^_]+__/, "").replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
 }
 
-/** A short, human title for a tool card from its parsed input. */
-function titleFor(name: string, input: unknown): string {
-  const i = (input ?? {}) as Record<string, unknown>;
-  const s = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : JSON.stringify(v));
-  switch (name) {
-    case "username_search": return `Hunting @${s(i.username)} across platforms`;
-    case "graph_upsert": return `Updating graph "${s(i.caseName)}"`;
-    case "graph_get": return `Reading graph "${s(i.caseName)}"`;
-    case "dns_lookup": return `DNS ${s(i.domain)}`;
-    case "whois": return `WHOIS ${s(i.query)}`;
-    case "http_probe": return `Fetching ${s(i.url)}`;
-    case "exif_read": return `Reading EXIF`;
-    case "reverse_image_urls": return `Reverse-image search`;
-    case "nesher_search": return `Breach search "${s(i.q)}"`;
-    case "nesher_power_search": return `Breach power-search`;
-    case "facebook_id": return `Resolving Facebook ID`;
-    case "web_search": return `Web search "${s(i.query)}"`;
-    case "web_fetch": return `Reading ${s(i.url)}`;
-    case "bash": return `Shell: ${s(i.command).slice(0, 60)}`;
-    case "read": return `Reading ${s(i.file_path).split(/[\\/]/).pop()}`;
-    case "write": return `Writing ${s(i.file_path).split(/[\\/]/).pop()}`;
-    default: return name.replace(/_/g, " ");
-  }
-}
+/** Every current Claude model takes `effort` except Haiku 4.5, which returns a
+ *  400 for it. Aliases (`haiku`) are covered as well as the dated id. */
+const supportsEffort = (model: string): boolean => !/haiku/i.test(model);
 
 let warnedNoSandbox = false;
 let toolServerPromise: ReturnType<typeof buildToolServer> | null = null;
@@ -78,7 +58,9 @@ export async function* runTurn(
     console.warn("[aether] the shell is reachable and this platform has no sandbox backend — commands run with the policy in main/permissions.ts as the only boundary.");
   }
   const policy = makePolicy({
-    access: () => settings.access ?? "ask",
+    // Live, not captured: a level changed from the composer mid-turn applies
+    // to the next gated call, exactly as it does on the other providers.
+    access: ctx.access,
     roots: () => [paths.workspace],
     onDenied: (tool, why) => console.warn(`[aether] refused ${tool}: ${why}`),
     ask: ctx.requestPermission,
@@ -100,8 +82,14 @@ export async function* runTurn(
       prompt,
       options: {
         model: settings.model,
-        effort: settings.effort,
-        systemPrompt: systemPrompt(settings),
+        // Haiku 4.5 is the one current model that rejects the effort parameter.
+        ...(supportsEffort(settings.model) ? { effort: settings.effort } : {}),
+        // Rendered fresh every request rather than recorded on the first one:
+        // the brief carries the access level, the voice and the date, and the
+        // operator can change the first two from the composer mid-conversation.
+        // A recorded prompt would keep telling the model it is in Safe mode
+        // after the operator opened the shell to it.
+        systemPrompt: { type: "custom", prompt: systemPrompt(settings), snapshot: false },
         mcpServers: { aether: server },
         // NOT bypassPermissions. That flag skips `canUseTool` entirely, which
         // means no policy runs at all — every tool call is allowed, including a

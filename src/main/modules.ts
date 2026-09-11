@@ -6,7 +6,9 @@
 //    that tool group when the server is (re)built.
 //  • custom modules are user-authored: a local COMMAND or an HTTP API called with
 //    the user's own keys. Each enabled one becomes a tool the agent can call.
-//  • connector rows mirror loaded private code connectors (read-only, for visibility).
+//  • connector modules are the operator's own private/connectors/*.mjs files:
+//    one module per file, switchable and annotatable like any custom module;
+//    only the implementation is fixed, because it lives on disk.
 //
 // Secrets (API keys) are encrypted at rest with Electron safeStorage (OS keychain)
 // when available, and are NEVER sent back to the renderer — the renderer only
@@ -100,6 +102,7 @@ const DEFAULT_MODULES: StoredModule[] = [
   C("phoneinfoga", "phoneinfoga_recon", "PhoneInfoga public-source recon for an international number you're authorized to check.", "phoneinfoga scan -n {input}", "an E.164 phone number"),
   // Website recon / authorized-scan wrappers:
   C("whatweb", "whatweb", "WhatWeb fingerprint: CMS, frameworks, headers, plugins on an authorized URL.", "whatweb --color=never --no-errors -a 3 {input}", "a URL you are authorized to test"),
+  C("webanalyze", "webanalyze", "webanalyze (Wappalyzer fingerprints): the technologies, CMS and frameworks behind an authorized URL. Installable everywhere, unlike WhatWeb.", "webanalyze -host {input} -crawl 0 -silent -output json", "a URL you are authorized to test"),
   C("wafw00f", "wafw00f", "Detect the WAF vendor in front of an authorized URL.", "wafw00f {input}", "a URL you are authorized to test"),
   C("httpx", "httpx", "httpx probe: scheme, status, title, tech, server and length for a host/URL in scope.", "httpx -u {input} -silent -status-code -title -tech-detect -web-server -content-length -follow-redirects", "a host or URL in scope"),
   C("tlsx", "tlsx", "tlsx certificate and TLS parameter grab for an authorized host.", "tlsx -u {input} -san -cn -so -expired -self-signed -untrusted -silent", "a hostname"),
@@ -152,7 +155,6 @@ const readGen = (): number => { try { return parseInt(readFileSync(genFile, "utf
 const writeGen = (n: number): void => { try { writeFileSync(genFile, String(n), "utf8"); } catch { /* best effort */ } };
 
 let mods: StoredModule[] = load();
-let connectorNames: string[] = [];
 
 function load(): StoredModule[] {
   let base: StoredModule[] = seed();
@@ -194,6 +196,8 @@ function reconcilePrivate(list: StoredModule[]): StoredModule[] {
         kind: p?.kind === "http" ? "http" : "command",
         enabled: p?.enabled !== false,
         builtin: false,
+        instructions: notesOf(p?.instructions),
+        freeform: p?.kind === "http" && p?.freeform === true,
         inputLabel: typeof p?.inputLabel === "string" ? p.inputLabel : undefined,
         command: typeof p?.command === "string" ? p.command : undefined,
         method: p?.method === "POST" ? "POST" : "GET",
@@ -230,10 +234,6 @@ function redact(m: StoredModule): ModuleConfig {
   return { ...rest, secrets: (secrets ?? []).map((s) => ({ name: s.name, set: (s.enc?.length ?? 0) > 0 })) };
 }
 
-function connectorRow(name: string): ModuleConfig {
-  return { id: "connector:" + name, name, description: "Loaded from a private code connector.", kind: "connector", enabled: true, builtin: true };
-}
-
 // function declaration (hoisted) so reconcilePrivate() can call it during load().
 function slug(s: string): string { return s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40) || "module"; }
 
@@ -250,33 +250,48 @@ function mergeSecrets(prior: StoredSecret[] | undefined, incoming: ModuleSecret[
   return out;
 }
 
+/** The operator's notes for a module, trimmed and bounded. A function
+ *  declaration (hoisted) so reconcilePrivate() can use it during load(). */
+function notesOf(v: unknown): string | undefined {
+  const t = typeof v === "string" ? v.trim().slice(0, 4000) : "";
+  return t || undefined;
+}
+
+const connectorId = (file: string) => "connector:" + file.replace(/\.(mjs|js)$/, "");
+
 export const modules = {
-  /** Redacted list for the renderer, with read-only connector rows appended. */
+  /** Redacted list for the renderer. */
   list(): ModuleConfig[] {
-    const configured = mods.map(redact);
-    const extra = connectorNames
-      .filter((n) => !mods.some((m) => m.name.toLowerCase() === n.toLowerCase()))
-      .map(connectorRow);
-    return [...configured, ...extra];
+    return mods.map(redact);
   },
 
   save(input: ModuleConfig): ModuleConfig[] {
     const existing = mods.find((m) => m.id === input.id);
-    if (existing?.builtin || existing?.kind === "connector") {
-      // Built-ins/connectors: only the enabled flag is user-mutable.
-      if (existing) existing.enabled = !!input.enabled;
+    if (existing?.builtin) {
+      // Built-ins: the switch and the notes are the operator's; the rest is ours.
+      existing.enabled = !!input.enabled;
+      existing.instructions = notesOf(input.instructions);
+    } else if (existing?.kind === "connector") {
+      // A connector's implementation is a file on disk; everything the operator
+      // can say ABOUT it — its name, what it is for, how to use it — is theirs.
+      existing.enabled = !!input.enabled;
+      existing.name = input.name.trim().slice(0, 60) || existing.name;
+      existing.description = input.description.slice(0, 2000);
+      existing.instructions = notesOf(input.instructions);
     } else if (existing) {
       Object.assign(existing, {
         name: input.name.slice(0, 60) || existing.name,
         description: input.description.slice(0, 2000),
         kind: input.kind === "http" ? "http" : "command",
         enabled: !!input.enabled,
+        instructions: notesOf(input.instructions),
         inputLabel: input.inputLabel?.slice(0, 400),
         command: input.command?.slice(0, 4000),
         method: input.method === "POST" ? "POST" : "GET",
         url: input.url?.slice(0, 2000),
         headers: (input.headers ?? []).filter((h) => h.name.trim()).slice(0, 20),
         body: input.body?.slice(0, 8000),
+        freeform: input.kind === "http" && !!input.freeform,
         secrets: mergeSecrets(existing.secrets, input.secrets),
       });
     } else {
@@ -287,12 +302,14 @@ export const modules = {
         kind: input.kind === "http" ? "http" : "command",
         enabled: input.enabled !== false,
         builtin: false,
+        instructions: notesOf(input.instructions),
         inputLabel: input.inputLabel?.slice(0, 400),
         command: input.command?.slice(0, 4000),
         method: input.method === "POST" ? "POST" : "GET",
         url: input.url?.slice(0, 2000),
         headers: (input.headers ?? []).filter((h) => h.name.trim()).slice(0, 20),
         body: input.body?.slice(0, 8000),
+        freeform: input.kind === "http" && !!input.freeform,
         secrets: mergeSecrets(undefined, input.secrets),
       });
     }
@@ -302,7 +319,8 @@ export const modules = {
 
   remove(id: string): ModuleConfig[] {
     const m = mods.find((x) => x.id === id);
-    // Bundled defaults, built-ins and connectors can't be deleted (only disabled).
+    // Bundled defaults and built-ins can't be deleted (only disabled); a
+    // connector goes when its file does.
     if (m && !m.builtin && !m.default && m.kind !== "connector") mods = mods.filter((x) => x.id !== id);
     persist();
     return this.list();
@@ -310,7 +328,7 @@ export const modules = {
 
   toggle(id: string, enabled: boolean): ModuleConfig[] {
     const m = mods.find((x) => x.id === id);
-    if (m && m.kind !== "connector") { m.enabled = enabled; persist(); }
+    if (m) { m.enabled = enabled; persist(); }
     return this.list();
   },
 
@@ -318,6 +336,73 @@ export const modules = {
   isBuiltinEnabled(key: NonNullable<ModuleConfig["builtinKey"]>): boolean {
     const m = mods.find((x) => x.builtinKey === key);
     return m ? m.enabled : true;
+  },
+
+  /** The operator's notes for a built-in group, if any. */
+  builtinNotes(key: NonNullable<ModuleConfig["builtinKey"]>): string | undefined {
+    return mods.find((x) => x.builtinKey === key)?.instructions;
+  },
+
+  /**
+   * Reconcile the connector files found on disk with the stored connector
+   * modules: one module per file, created with a plain description the first
+   * time, kept — name, notes, switch and all — every time after. A module
+   * whose file has gone is dropped; a row for code that no longer exists would
+   * be a switch wired to nothing.
+   */
+  registerConnectors(found: Array<{ file: string; toolNames: string[]; failed?: boolean }>): void {
+    let changed = false;
+    // Presence is the FILE being on disk, not the load succeeding: a connector
+    // that is broken this morning keeps its switch, name and notes for when
+    // it is fixed this afternoon.
+    const present = new Set(found.map((f) => connectorId(f.file)));
+    for (const f of found) {
+      const id = connectorId(f.file);
+      const existing = mods.find((m) => m.id === id);
+      if (existing) {
+        if (!f.failed && JSON.stringify(existing.connectorTools ?? []) !== JSON.stringify(f.toolNames)) { existing.connectorTools = f.toolNames; changed = true; }
+        if (existing.connectorFile !== f.file) { existing.connectorFile = f.file; changed = true; }
+        continue;
+      }
+      if (f.failed) continue; // nothing to describe yet; it is listed once it loads
+      mods.push({
+        id,
+        name: f.file.replace(/\.(mjs|js)$/, ""),
+        description: `Your own code connector (private/connectors/${f.file}). Tools: ${f.toolNames.join(", ")}.`,
+        kind: "connector", enabled: true, builtin: false,
+        connectorFile: f.file, connectorTools: f.toolNames,
+      });
+      changed = true;
+    }
+    const before = mods.length;
+    mods = mods.filter((m) => m.kind !== "connector" || present.has(m.id));
+    if (mods.length !== before) changed = true;
+    if (changed) persist();
+  },
+
+  /** Which connector module a tool belongs to, and whether it may run. */
+  connectorFor(toolName: string): { enabled: boolean; instructions?: string } | undefined {
+    const m = mods.find((x) => x.kind === "connector" && (x.connectorTools ?? []).includes(toolName));
+    return m ? { enabled: m.enabled, instructions: m.instructions } : undefined;
+  },
+
+  /**
+   * A draft from the editor as a runnable module, for "Send a test request".
+   * Secrets typed into the draft are used as typed; ones marked `set` with no
+   * value fall back to what is stored for that module. Nothing is persisted.
+   */
+  resolveDraft(input: ModuleConfig): LiveModule & { toolName: string } {
+    const stored = mods.find((m) => m.id === input.id);
+    const priorMap = new Map((stored?.secrets ?? []).map((s) => [s.name, s.enc]));
+    const secretValues: Record<string, string> = {};
+    for (const sec of input.secrets ?? []) {
+      const name = sec.name.trim();
+      if (!name || sec.clear) continue;
+      if (typeof sec.value === "string" && sec.value.length) secretValues[name] = sec.value;
+      else if (priorMap.has(name)) secretValues[name] = decrypt(priorMap.get(name)!);
+    }
+    const { secrets, ...rest } = input;
+    return { ...rest, secretValues, toolName: "mod_" + slug(input.name || "module") };
   },
 
   /** Enabled custom (command/http) modules with secrets decrypted + a tool slug —
@@ -339,5 +424,4 @@ export const modules = {
     return out;
   },
 
-  setConnectorNames(names: string[]): void { connectorNames = names; },
 };

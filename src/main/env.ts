@@ -18,12 +18,22 @@
 // the shell the agent runs under it.
 // ─────────────────────────────────────────────────────────────────────────────
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { delimiter, join } from "node:path";
 
 const HOME = homedir();
 const isWin = platform() === "win32";
+
+/** `parent/<anything>/tail` for every child of `parent` — how version-stamped
+ *  bin directories (gems, Pythons, Rubies) are found without knowing versions. */
+function versioned(parent: string, ...tail: string[]): string[] {
+  try {
+    return readdirSync(parent, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => join(parent, d.name, ...tail));
+  } catch { return []; }
+}
 
 /** Where package managers actually put things, in the order a shell would find
  *  them. Homebrew first: on Apple Silicon it is /opt/homebrew, on Intel it is
@@ -37,11 +47,25 @@ function candidateDirs(): string[] {
       join(process.env.ProgramData ?? "C:\\ProgramData", "chocolatey", "bin"),
       join(local, "Microsoft", "WinGet", "Links"),   // winget shims
       join(local, "Programs", "Python", "Scripts"),
+      // `pip install --user` / pipx-installed console scripts, per Python version.
+      ...versioned(join(local, "Programs", "Python"), "Scripts"),
+      ...versioned(join(roaming, "Python"), "Scripts"),
       join(roaming, "Python", "Scripts"),
       join(roaming, "npm"),
       join(HOME, "go", "bin"),
       join(HOME, ".cargo", "bin"),
-      join(HOME, ".local", "bin"),
+      join(HOME, ".local", "bin"),                   // pipx
+      // RubyInstaller puts each Ruby at C:\RubyXY-x64\bin; gems' executables
+      // land there too.
+      ...versioned(process.env.SystemDrive ? process.env.SystemDrive + "\\" : "C:\\", "bin").filter((d) => /[\\/]Ruby[^\\/]*[\\/]bin$/i.test(d)),
+      // `gem install --user-install` (the wpscan route) does NOT use that dir:
+      // RubyGems has no Windows special case, so its bin dir is
+      // %USERPROFILE%\\.gem\\ruby\\<ver>\\bin when ~\\.gem exists, else
+      // (XDG_DATA_HOME || %USERPROFILE%\\.local\\share)\\gem\\ruby\\<ver>\\bin.
+      ...versioned(join(HOME, ".gem", "ruby"), "bin"),
+      ...versioned(join(process.env.XDG_DATA_HOME || join(HOME, ".local", "share"), "gem", "ruby"), "bin"),
+      join(process.env.ProgramFiles ?? "C:\\Program Files", "Go", "bin"),
+      join(process.env.ProgramFiles ?? "C:\\Program Files", "Nmap"),
     ];
   }
   const dirs = [
@@ -64,9 +88,14 @@ function candidateDirs(): string[] {
     if (gopath) dirs.push(join(gopath, "bin"));
   }
   // macOS `pip install --user` lands in a version-stamped Python framework dir.
-  for (const v of ["3.14", "3.13", "3.12", "3.11", "3.10", "3.9"]) {
-    dirs.push(join(HOME, "Library", "Python", v, "bin"));
-  }
+  dirs.push(...versioned(join(HOME, "Library", "Python"), "bin"));
+  // `gem install --user-install` puts executables in a per-Ruby-version dir:
+  // XDG (~/.local/share/gem) for Ruby 3.2+, ~/.gem for older; a Homebrew Ruby's
+  // own gem bin dir is not on PATH either. None of these are found otherwise.
+  dirs.push(...versioned(join(HOME, ".local", "share", "gem", "ruby"), "bin"));
+  dirs.push(...versioned(join(HOME, ".gem", "ruby"), "bin"));
+  dirs.push(...versioned("/opt/homebrew/lib/ruby/gems", "bin"));
+  dirs.push(...versioned("/usr/local/lib/ruby/gems", "bin"));
   return dirs;
 }
 

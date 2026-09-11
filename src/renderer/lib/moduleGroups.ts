@@ -25,8 +25,7 @@ export const GROUPS: readonly ModuleGroup[] = [
   { key: "scan",      label: "Scanning",                 blurb: "Fingerprinting and misconfiguration checks on targets you are authorized to test." },
   { key: "code",      label: "Code & packages",          blurb: "Package registries and repository search." },
   { key: "media",     label: "Photos & media",           blurb: "Metadata and reverse-image lookups." },
-  { key: "custom",    label: "Your modules",             blurb: "Commands and APIs you added." },
-  { key: "connector", label: "Connectors",               blurb: "Private code connectors loaded from disk." },
+  { key: "custom",    label: "Your modules",             blurb: "Commands, APIs and code connectors you added." },
   { key: "other",     label: "Other",                    blurb: "" },
 ] as const;
 
@@ -55,14 +54,14 @@ put("archive", [
   "def:wayback", "def:urlscan", "def:otx-domain", "def:otx-ip",
   "def:waybackurls", "def:gau", "def:katana",
 ]);
-put("scan", ["def:whatweb", "def:wafw00f", "def:nuclei", "def:nikto", "def:wpscan"]);
+put("scan", ["def:whatweb", "def:webanalyze", "def:wafw00f", "def:nuclei", "def:nikto", "def:wpscan"]);
 put("code", ["def:npm", "def:pypi", "def:crates", "def:github-search-repos"]);
 put("media", ["builtin:exif", "builtin:reverse_image"]);
 
-/** Which group a module belongs in. Provenance wins for the two tails: a
- *  connector is always a connector, and anything the user authored is theirs. */
+/** Which group a module belongs in. Provenance wins for the tail: anything
+ *  the user authored — a command, an API, or a code connector — is theirs. */
 export function groupFor(m: { id: string; kind: string; default?: boolean }): string {
-  if (m.kind === "connector") return "connector";
+  if (m.kind === "connector") return "custom";
   if ((m.kind === "command" || m.kind === "http") && !m.default) return "custom";
   return BY_ID[m.id] ?? "other";
 }

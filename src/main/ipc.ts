@@ -5,15 +5,19 @@ import { IPC } from "../shared/ipc";
 import { paths, runtime, loadSettings } from "./config";
 import { store } from "./store";
 import { modules } from "./modules";
-import { toolStatuses, installTool, installMissing, cancelInstall, toolFor } from "./installer";
+import { toolStatuses, installTool, installMissing, cancelInstall, toolFor, configureInstaller } from "./installer";
+import { repairPath } from "./env";
 import { setDelivery, resolvePermission, cancelAllPermissions, clearSessionGrants, requestPermission } from "./approvals";
 import { runTurn, resetToolServer } from "./agent";
 import { buildToolList } from "./tools";
-import { runChatTurn, listOllamaModels } from "./chatEngine";
+import { testModule } from "./tools/customModules";
+import { runChatTurn } from "./chatEngine";
+import { ollamaModels, ollamaWarning, openAiModels, geminiModels } from "./models";
+import { staticModels } from "../shared/models";
 import { runGeminiTurn } from "./geminiEngine";
-import { geminiSignedIn, geminiEmail, geminiLogin, geminiLogout } from "./geminiAuth";
+import { runOllamaTurn } from "./ollamaEngine";
 import { configureUpdater, getUpdateStatus, checkForUpdates, installUpdate } from "./updater";
-import { secrets, OPENAI_KEY } from "./secrets";
+import { secrets, OPENAI_KEY, GEMINI_KEY } from "./secrets";
 import { decodeImages, writeAttachments, attachedImagesBlock } from "./images";
 import { authStatus, authLogin } from "./auth";
 import type { ToolContext } from "./tools/context";
@@ -33,8 +37,9 @@ function broadcast(channel: string, payload: unknown): void {
 const toolCtx: ToolContext = {
   timezone: runtime.timezone,
   notifyGraphChanged: (caseName) => broadcast(IPC.graphChanged, { caseName }),
-  // Reads the live setting each turn (the tool server is cached, so this closure
-  // is how safe mode reaches command modules without a rebuild).
+  // Read live, per call (the tool server is cached, so these closures are how
+  // a level changed mid-turn reaches a command module without a rebuild).
+  access: () => settings.access ?? "ask",
   // "safe" is the only level that withholds the shell outright; at "ask" the
   // permission prompt is what gates it, not this flag.
   isAutonomous: () => (settings.access ?? "ask") !== "safe",
@@ -129,6 +134,7 @@ async function startTurn(req: ChatRequest, conversationId: string, prompt: strin
     const stream =
       settings.provider === "claude" ? runTurn(prompt, resumeId, settings, toolCtx, abort.signal)
       : settings.provider === "gemini" ? runGeminiTurn(prompt, prior, settings, toolCtx, abort.signal)
+      : settings.provider === "ollama" ? runOllamaTurn(prompt, prior, settings, toolCtx, abort.signal)
       : runChatTurn(prompt, prior, settings, toolCtx, abort.signal);
     for await (const event of stream) {
       if (event.type === "session") { store.setClaudeSessionId(conversationId, event.claudeSessionId); continue; }
@@ -158,16 +164,50 @@ async function startTurn(req: ChatRequest, conversationId: string, prompt: strin
   }
 }
 
-const GEMINI_MODELS = ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"];
-
+/** Readiness plus the model catalogue for the ACTIVE provider. Ollama and any
+ *  OpenAI-compatible endpoint are listed live; Claude and Gemini are static.
+ *  The renderer asks for this at boot, on provider change, and whenever the
+ *  model picker opens, so it must be quick and must never throw. */
 async function providerStatus(): Promise<ProviderStatus> {
   const p = settings.provider;
-  const models = p === "ollama" ? await listOllamaModels(settings.ollamaBaseUrl) : p === "gemini" ? GEMINI_MODELS : [];
-  const hasKey = p === "openai" ? secrets.has(OPENAI_KEY) : p === "gemini" ? geminiSignedIn() : true;
+  const hasKey = p === "openai" ? secrets.has(OPENAI_KEY) : p === "gemini" ? secrets.has(GEMINI_KEY) : true;
+  let modelInfo = [...staticModels(p)];
+  let listedLive = false;
   let detail: string | undefined;
-  if (p === "ollama" && !models.length) detail = "No local models found. Is `ollama serve` running?";
-  else if (p === "gemini") detail = geminiSignedIn() ? (geminiEmail() ? `Signed in as ${geminiEmail()}` : "Signed in with Google") : "Sign in with your Google account to use Gemini free.";
-  return { provider: p, hasKey, models, detail };
+  let warning: string | undefined;
+
+  if (p === "ollama") {
+    const { reachable, models } = await ollamaModels(settings.ollamaBaseUrl);
+    modelInfo = models;
+    listedLive = reachable;
+    if (!reachable) detail = "Ollama is not reachable. Is `ollama serve` running?";
+    else if (!models.length) detail = "Ollama is running but has no models. Pull one, e.g. `ollama pull qwen3`.";
+    else {
+      const running = models.filter((m) => m.running).length;
+      const withTools = models.filter((m) => m.tools).length;
+      detail = `${models.length} local model${models.length === 1 ? "" : "s"} · ${withTools} with tool calling${running ? ` · ${running} loaded now` : ""}`;
+    }
+    warning = ollamaWarning(settings.ollamaModel, models);
+  } else if (p === "openai") {
+    // A listing needs the key; without one there is nothing to show but the
+    // suggestions, and the missing key is the thing to say.
+    if (hasKey) {
+      const { reachable, models } = await openAiModels(settings.openaiBaseUrl, secrets.get(OPENAI_KEY));
+      if (reachable && models.length) { modelInfo = models; listedLive = true; }
+      else if (!reachable) detail = "Could not list models from this endpoint — the suggestions below are a starting point; any model id can be typed.";
+      else detail = "This endpoint listed no chat models — the suggestions below are OpenAI's; type the id your gateway serves.";
+    }
+  } else if (p === "gemini") {
+    if (hasKey) {
+      const { reachable, models } = await geminiModels(secrets.get(GEMINI_KEY));
+      if (reachable && models.length) { modelInfo = models; listedLive = true; detail = `${models.length} models available to this key`; }
+      else if (!reachable) detail = "Could not list models with this key — check it, or pick from the suggestions.";
+    } else {
+      detail = "Add a Gemini API key from Google AI Studio. Flash models have a free tier.";
+    }
+  }
+
+  return { provider: p, hasKey, models: modelInfo.map((m) => m.id), modelInfo, listedLive, detail, ...(warning ? { warning } : {}) };
 }
 
 export function registerIpc(): void {
@@ -211,16 +251,9 @@ export function registerIpc(): void {
 
   ipcMain.handle(IPC.providerStatus, () => providerStatus());
   ipcMain.handle(IPC.providerSetKey, async (_e, provider: Provider, key: string) => {
-    if (provider === "openai") secrets.set(OPENAI_KEY, typeof key === "string" ? key.trim() : "");
-    return providerStatus();
-  });
-  // OAuth sign-in (Gemini). Resolves when the browser flow completes.
-  ipcMain.handle(IPC.providerLogin, async (_e, provider: Provider) => {
-    if (provider === "gemini") return geminiLogin();
-    return { ok: false, message: "That provider signs in with an API key, not a browser login." };
-  });
-  ipcMain.handle(IPC.providerLogout, async (_e, provider: Provider) => {
-    if (provider === "gemini") geminiLogout();
+    const value = typeof key === "string" ? key.trim() : "";
+    if (provider === "openai") secrets.set(OPENAI_KEY, value);
+    else if (provider === "gemini") secrets.set(GEMINI_KEY, value);
     return providerStatus();
   });
 
@@ -230,6 +263,7 @@ export function registerIpc(): void {
   const moduleName = (id: string) => modules.list().find((m) => m.id === id)?.name ?? id;
   const emitProgress = (p: InstallProgress) => broadcast(IPC.installProgress, p);
 
+  configureInstaller({ workspace: paths.workspace, refreshPath: repairPath });
   ipcMain.handle(IPC.toolsStatus, () => toolStatuses(moduleName));
   ipcMain.handle(IPC.toolInstall, (_e, moduleId: string) => {
     if (typeof moduleId !== "string" || !toolFor(moduleId)) return false;
@@ -250,6 +284,13 @@ export function registerIpc(): void {
   ipcMain.handle(IPC.moduleSave, (_e, mod: ModuleConfig) => afterModuleChange(modules.save(mod)));
   ipcMain.handle(IPC.moduleDelete, (_e, id: string) => afterModuleChange(modules.remove(id)));
   ipcMain.handle(IPC.moduleToggle, (_e, id: string, enabled: boolean) => afterModuleChange(modules.toggle(id, !!enabled)));
+  // "Try it" in the module editor: one call with a sample input, against the
+  // draft as typed (unsaved edits included). Only custom kinds can be tried;
+  // a connector or a built-in has nothing to render a request from.
+  ipcMain.handle(IPC.moduleTest, (_e, mod: ModuleConfig, sample: string) => {
+    if (!mod || (mod.kind !== "http" && mod.kind !== "command")) return { ok: false, request: "", output: "Only command and API modules can be tried here.", ms: 0 };
+    return testModule(modules.resolveDraft(mod), typeof sample === "string" ? sample.slice(0, 4000) : "", () => settings.access ?? "ask");
+  });
 
   ipcMain.handle(IPC.conversationsList, () => store.listConversations());
   ipcMain.handle(IPC.conversationGet, (_e, id: string) => {

@@ -19,8 +19,6 @@ const api: AetherApi = {
 
   providerStatus: () => ipcRenderer.invoke(IPC.providerStatus),
   setProviderKey: (provider, key) => ipcRenderer.invoke(IPC.providerSetKey, provider, key),
-  providerLogin: (provider) => ipcRenderer.invoke(IPC.providerLogin, provider),
-  providerLogout: (provider) => ipcRenderer.invoke(IPC.providerLogout, provider),
 
   toolStatuses: () => ipcRenderer.invoke(IPC.toolsStatus),
   installTool: (moduleId) => ipcRenderer.invoke(IPC.toolInstall, moduleId),
@@ -43,6 +41,7 @@ const api: AetherApi = {
   saveModule: (mod) => ipcRenderer.invoke(IPC.moduleSave, mod),
   deleteModule: (id) => ipcRenderer.invoke(IPC.moduleDelete, id),
   toggleModule: (id, enabled) => ipcRenderer.invoke(IPC.moduleToggle, id, enabled),
+  testModule: (mod, sample) => ipcRenderer.invoke(IPC.moduleTest, mod, sample),
 
   listConversations: () => ipcRenderer.invoke(IPC.conversationsList),
   getConversation: (id) => ipcRenderer.invoke(IPC.conversationGet, id),

@@ -4,7 +4,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import type {
   AetherSettings, AuthStatus, ChatRequest, Conversation, Message,
-  CaseGraph, GraphCaseInfo, AgentEvent, ModuleConfig, ProviderStatus, Provider, UpdateStatus,
+  CaseGraph, GraphCaseInfo, AgentEvent, ModuleConfig, ModuleTestResult, ProviderStatus, Provider, UpdateStatus,
   ToolStatus, InstallProgress, PermissionRequest, PermissionReply,
 } from "./types";
 
@@ -20,8 +20,6 @@ export const IPC = {
 
   providerStatus: "provider:status",
   providerSetKey: "provider:setKey",
-  providerLogin: "provider:login",
-  providerLogout: "provider:logout",
 
   permissionReply: "permission:reply",
 
@@ -34,6 +32,7 @@ export const IPC = {
   moduleSave: "modules:save",
   moduleDelete: "modules:delete",
   moduleToggle: "modules:toggle",
+  moduleTest: "modules:test",
 
   conversationsList: "conversations:list",
   conversationGet: "conversations:get",
@@ -94,12 +93,8 @@ export interface AetherApi {
 
   /** Provider readiness: whether a key/sign-in is present, and any listable models. */
   providerStatus(): Promise<ProviderStatus>;
-  /** Store (or clear, with "") an API key for a provider. Never read back. */
+  /** Store (or clear, with "") an API key for a provider (OpenAI, Gemini). Never read back. */
   setProviderKey(provider: Provider, key: string): Promise<ProviderStatus>;
-  /** Start a browser OAuth sign-in for a provider (Gemini). Resolves when done. */
-  providerLogin(provider: Provider): Promise<{ ok: boolean; message: string }>;
-  /** Sign out of an OAuth provider (clears stored tokens). */
-  providerLogout(provider: Provider): Promise<ProviderStatus>;
 
   /** Command-line tools the bundled modules wrap: what is installed, and what
    *  it would take to install the rest. */
@@ -121,6 +116,9 @@ export interface AetherApi {
   saveModule(mod: ModuleConfig): Promise<ModuleConfig[]>;
   deleteModule(id: string): Promise<ModuleConfig[]>;
   toggleModule(id: string, enabled: boolean): Promise<ModuleConfig[]>;
+  /** Run a module draft once with a sample input — what the model would get.
+   *  Nothing is saved; secrets typed into the draft are used for this call only. */
+  testModule(mod: ModuleConfig, sample: string): Promise<ModuleTestResult>;
 
   listConversations(): Promise<Conversation[]>;
   getConversation(id: string): Promise<ConversationDetail | null>;

@@ -540,9 +540,26 @@ button { border: 0; background: none; padding: 0; cursor: pointer; }
   background: none; border: 0; outline: 0; color: var(--label-2);
   font-size: var(--fs-caption); font-weight: 510; cursor: pointer;
   -webkit-appearance: none; appearance: none; padding: 0 var(--sp-2) 0 0;
-  field-sizing: content; max-width: 18ch;
+  /* Wide enough for a local model's tag and state ("qwen3:14b · loaded"),
+     capped so a long id cannot push the hint off the line. */
+  field-sizing: content; max-width: 30ch; overflow: hidden; text-overflow: ellipsis;
 }
+/* The access pick is the one control in the footer that changes what the
+   agent may DO, so its state is visible at a glance: Safe is quiet, Ask is the
+   default and looks like the other picks, Full is tinted with the warning
+   colour — the same red Claude Code paints "bypass permissions" in. */
+.pick.access.full { background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--bad); }
+.pick.access.full select { color: var(--bad); font-weight: 640; }
+.pick.access.safe { color: var(--ok); }
+.pick.access.safe select { color: var(--ok); }
 .hint { margin-left: auto; font-size: var(--fs-caption); color: var(--label-4); white-space: nowrap; }
+/* A warning replaces the key hints and may need to wrap — it is the reason the
+   next turn would fail, so it must be readable in full. */
+.hint.warn {
+  display: inline-flex; align-items: flex-start; gap: var(--sp-1);
+  white-space: normal; text-align: right; color: var(--warn); max-width: 46ch; line-height: 1.35;
+}
+.hint.warn > svg { flex: 0 0 auto; margin-top: 2px; }
 
 /* ── panes ───────────────────────────────────────────────────────────────── */
 .pane-scroll { overflow-y: auto; min-height: 0; background: var(--bg); }
@@ -699,6 +716,11 @@ select { cursor: pointer; }
   font-size: var(--fs-caption); font-weight: 590; color: var(--label-3);
 }
 .tag.strong { background: var(--accent-soft); color: var(--accent); }
+.tag.bad { background: color-mix(in srgb, var(--bad) 12%, transparent); color: var(--bad); }
+/* Capability tags on a listed model, pushed to the row's right edge. */
+.model-tags { margin-left: auto; display: inline-flex; gap: 4px; flex: 0 0 auto; }
+.model-tags .tag { height: 18px; font-weight: 510; }
+.row .lbl + .model-tags { margin-left: auto; }
 .mod-acts { display: flex; align-items: center; gap: var(--sp-2); flex: 0 0 auto; }
 .locked { font-size: var(--fs-caption); color: var(--label-4); }
 
@@ -778,7 +800,43 @@ select { cursor: pointer; }
 .modal.perm, .onboard-card { background: var(--surface); }
 @keyframes sheet { from { opacity: 0; transform: translateY(12px) scale(0.98); } to { opacity: 1; transform: none; } }
 .onboard-card { width: 440px; padding: var(--sp-6); text-align: center; }
+
+/* The provider-chooser welcome. Wider than the plain card and left-aligned —
+   it holds a form, not just a headline and a button. */
+.onboard-card.onboard-welcome { width: 460px; text-align: left; padding: var(--sp-6); }
+.onboard-hero { display: flex; align-items: flex-start; gap: var(--sp-3); margin-bottom: var(--sp-5); }
+.onboard-mark {
+  flex: 0 0 auto; width: 40px; height: 40px; border-radius: var(--r);
+  background: var(--accent); color: var(--on-accent);
+  display: grid; place-items: center; font-size: var(--fs-title); font-weight: 700;
+}
+.onboard-welcome h1 { font-size: var(--fs-title); font-weight: 700; letter-spacing: -0.02em; margin: 0 0 var(--sp-1); }
+.onboard-providers { margin-bottom: var(--sp-4); }
+.onboard-setup { min-height: 128px; }
+.onboard-tag {
+  display: inline-flex; align-items: center; height: 20px; padding: 0 var(--sp-2);
+  margin-bottom: var(--sp-2); border-radius: var(--r-pill);
+  background: var(--fill); color: var(--label-3);
+  font-size: var(--fs-caption); font-weight: 640; letter-spacing: 0.02em; text-transform: uppercase;
+}
+.onboard-setup .slab { margin-top: var(--sp-1); }
+.onboard-setup .row-inline { margin-bottom: var(--sp-2); }
+.onboard-foot {
+  display: flex; align-items: center; gap: var(--sp-3);
+  margin-top: var(--sp-5); padding-top: var(--sp-4);
+  border-top: 1px solid var(--separator);
+}
 .onboard-card h1 { font-size: var(--fs-title); font-weight: 700; letter-spacing: -0.02em; margin: 0 0 var(--sp-2); }
+/* "Try it" result in the module editor: the request that went out, then what
+   came back, both in mono so a JSON body reads as JSON. */
+.try-result { margin-top: var(--sp-2); background: var(--surface); border-radius: var(--r); box-shadow: var(--shadow-card); overflow: hidden; }
+.try-head { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--separator); font-size: var(--fs-foot); }
+.try-head .t { font-weight: 590; }
+.try-head .s { color: var(--label-3); margin-left: auto; }
+.try-result.bad .try-head .t { color: var(--bad); }
+.try-req, .try-out { margin: 0; padding: var(--sp-2) var(--sp-3); font-family: var(--font-mono); font-size: var(--fs-caption); line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+.try-req { color: var(--label-3); border-bottom: 1px solid var(--separator); }
+.try-out { max-height: 220px; overflow: auto; }
 .modal-head, .modal-foot { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); flex: 0 0 auto; }
 .modal-head { border-bottom: 1px solid var(--separator); }
 .modal-foot { border-top: 1px solid var(--separator); }
@@ -884,7 +942,7 @@ select { cursor: pointer; }
   .gsearch { flex-basis: 180px; }
   .gmeta .long { display: none; }
 }
-@media (max-width: 1040px) { .hint { display: none; } }
+@media (max-width: 1040px) { .hint:not(.warn) { display: none; } }
 @media (max-width: 900px) {
   :root { --w-rail: 232px; --w-inspector: 300px; }
   .statusline .legend { display: none; }

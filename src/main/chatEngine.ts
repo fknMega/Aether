@@ -1,22 +1,23 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// OpenAI-compatible turn runner. Drives ChatGPT (api.openai.com) and any local
-// OpenAI-compatible server — Ollama's /v1 in particular — over
-// POST /chat/completions with streaming + tool calling.
+// OpenAI-compatible turn runner. Drives ChatGPT (api.openai.com) and any
+// OpenAI-compatible server — OpenRouter, Azure, LM Studio, vLLM, or Ollama's
+// /v1 — over POST /chat/completions with streaming + tool calling.
 //
 // It reuses the exact same in-process tools as the Claude path: each SDK tool's
 // zod shape is converted to JSON Schema for the `tools` array, and its handler is
-// invoked when the model calls it. Emits the same AgentEvent stream as the Claude
-// runner, so the UI can't tell which brain is behind a turn.
+// invoked — through the same access policy — when the model calls it. Emits the
+// same AgentEvent stream as the Claude runner, so the UI can't tell which brain
+// is behind a turn.
 // ─────────────────────────────────────────────────────────────────────────────
-import { z } from "zod";
 import { systemPrompt } from "./prompt";
 import { buildToolList } from "./tools";
 import { secrets, OPENAI_KEY } from "./secrets";
 import { runtime } from "./config";
+import { gatedTools, jsonSchemaFor, titleFor, isAbortError, CANCELLED, MAX_ROUNDS, MAX_TOOL_CHARS, type SdkTool } from "./engineShared";
+import { chatEffortFor, isNativeOpenAi } from "./openaiWire";
+import { runResponsesTurn } from "./openaiResponsesEngine";
 import type { ToolContext } from "./tools/context";
 import type { AetherSettings, AgentEvent, Message, ToolActivity } from "../shared/types";
-
-type SdkTool = { name: string; description: string; inputSchema: Record<string, unknown>; handler: (args: unknown, extra: unknown) => Promise<{ content?: Array<{ type?: string; text?: string }>; isError?: boolean }> };
 
 interface OaiToolCall { id: string; name: string; args: string; }
 interface OaiMessage {
@@ -26,54 +27,58 @@ interface OaiMessage {
   tool_call_id?: string;
 }
 
-const MAX_ROUNDS = 12;        // tool-call rounds before we stop looping
-const MAX_TOOL_CHARS = 8000;  // cap a single tool result fed back to the model
+/** One streamed chunk, as much of it as we read. `reasoning` is where
+ *  OpenRouter and Ollama put a thinking model's reasoning; `reasoning_content`
+ *  is DeepSeek's spelling. OpenAI itself sends neither on this endpoint. */
+interface OaiChunk {
+  choices?: Array<{
+    delta?: {
+      content?: string;
+      reasoning?: string;
+      reasoning_content?: string;
+      tool_calls?: Array<{ index?: number; id?: string; function?: { name?: string; arguments?: string } }>;
+    };
+    finish_reason?: string;
+  }>;
+  error?: { message?: string };
+}
 
-/** Where to send the request, and how to authenticate, for the active provider. */
+/** Where to send the request, and how to authenticate. */
 function endpointFor(settings: AetherSettings): { url: string; model: string; headers: Record<string, string>; label: string } {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (settings.provider === "openai") {
-    const base = (settings.openaiBaseUrl || "https://api.openai.com/v1").replace(/\/+$/, "");
-    const key = secrets.get(OPENAI_KEY);
-    if (key) headers.Authorization = `Bearer ${key}`;
-    return { url: `${base}/chat/completions`, model: settings.openaiModel || "gpt-4o", headers, label: "ChatGPT" };
-  }
-  const base = (settings.ollamaBaseUrl || "http://localhost:11434/v1").replace(/\/+$/, "");
-  return { url: `${base}/chat/completions`, model: settings.ollamaModel || "llama3.1", headers, label: "Ollama" };
+  const base = (settings.openaiBaseUrl || "https://api.openai.com/v1").replace(/\/+$/, "");
+  const key = secrets.get(OPENAI_KEY);
+  if (key) headers.Authorization = `Bearer ${key}`;
+  return { url: `${base}/chat/completions`, model: settings.openaiModel || runtime.defaults.openaiModel, headers, label: "ChatGPT" };
 }
 
 /** SDK tools -> OpenAI function-tool definitions (zod shape -> JSON Schema). */
 function toOpenAiTools(tools: SdkTool[]) {
   const out: Array<{ type: "function"; function: { name: string; description: string; parameters: unknown } }> = [];
   for (const t of tools) {
-    try {
-      const parameters = z.toJSONSchema(z.object((t.inputSchema ?? {}) as never), { io: "input" }) as Record<string, unknown>;
-      delete parameters.$schema;
-      out.push({ type: "function", function: { name: t.name, description: (t.description || "").slice(0, 1024), parameters } });
-    } catch { /* a schema we can't express as JSON Schema — skip that tool */ }
+    const parameters = jsonSchemaFor(t);
+    if (!parameters) continue; // a schema we can't express as JSON Schema — skip that tool
+    out.push({ type: "function", function: { name: t.name, description: (t.description || "").slice(0, 4000), parameters } });
   }
   return out;
 }
 
-const textOf = (r: { content?: Array<{ type?: string; text?: string }> } | undefined): string =>
-  (r?.content ?? []).map((c) => (typeof c?.text === "string" ? c.text : "")).join("\n").trim();
-
-/** A short, human title for the activity card (mirrors the Claude runner). */
-function titleFor(name: string, input: Record<string, unknown>): string {
-  const s = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : JSON.stringify(v));
-  switch (name) {
-    case "username_search": return `Hunting @${s(input.username)} across platforms`;
-    case "graph_upsert": return `Updating graph "${s(input.caseName)}"`;
-    case "graph_get": return `Reading graph "${s(input.caseName)}"`;
-    case "dns_lookup": return `DNS ${s(input.domain)}`;
-    case "whois": return `WHOIS ${s(input.query)}`;
-    case "http_probe": return `Fetching ${s(input.url)}`;
-    case "exif_read": return "Reading EXIF";
-    default: return name.replace(/_/g, " ") + (input.input ? ` "${s(input.input)}"` : "");
-  }
+/** The ChatGPT provider's entry point. OpenAI's own endpoint gets the
+ *  Responses API — the only place its current models take tools together
+ *  with reasoning; any other base URL gets Chat Completions below. */
+export function runChatTurn(
+  prompt: string,
+  history: Message[],
+  settings: AetherSettings,
+  ctx: ToolContext,
+  signal: AbortSignal,
+): AsyncGenerator<AgentEvent> {
+  const transport = process.env.AETHER_OPENAI_TRANSPORT;
+  const useResponses = transport === "responses" || (transport !== "chat" && isNativeOpenAi(settings.openaiBaseUrl || "https://api.openai.com/v1"));
+  return useResponses ? runResponsesTurn(prompt, history, settings, ctx, signal) : runCompletionsTurn(prompt, history, settings, ctx, signal);
 }
 
-export async function* runChatTurn(
+export async function* runCompletionsTurn(
   prompt: string,
   history: Message[],
   settings: AetherSettings,
@@ -81,42 +86,70 @@ export async function* runChatTurn(
   signal: AbortSignal,
 ): AsyncGenerator<AgentEvent> {
   const { url, model, headers, label } = endpointFor(settings);
-  if (settings.provider === "openai" && !secrets.get(OPENAI_KEY)) {
+  if (!secrets.get(OPENAI_KEY)) {
     yield { type: "error", message: "No OpenAI API key set. Add one in Settings → Model, or switch provider." };
     return;
   }
 
+  // Abort on the caller's signal OR after the turn timeout — a stalled stream
+  // from a gateway must not hang the turn forever. (The Claude runner gets the
+  // same ceiling from its own timer; this is the equivalent for this path.)
+  // The same signal stops the tool loop: a Stop mid-round runs nothing more.
+  const ac = new AbortController();
+  const onAbort = () => ac.abort();
+  signal.addEventListener("abort", onAbort, { once: true });
+  const timeout = setTimeout(() => ac.abort(), runtime.turnTimeoutMs);
+
   const { tools } = await buildToolList(ctx);
-  const byName = new Map(tools.map((t) => [(t as unknown as SdkTool).name, t as unknown as SdkTool]));
+  const { run } = gatedTools(ctx, tools as unknown as SdkTool[], ac.signal);
   const toolDefs = toOpenAiTools(tools as unknown as SdkTool[]);
+  // Only sent when the model is known to accept it; adjusted for the rest of
+  // the turn if the server rejects it anyway.
+  let reasoningEffort: string | undefined = chatEffortFor(model, settings.effort, toolDefs.length > 0);
 
   const messages: OaiMessage[] = [{ role: "system", content: systemPrompt(settings) }];
   for (const m of history.slice(-30)) {
     if (m.content?.trim()) messages.push({ role: m.role === "user" ? "user" : "assistant", content: m.content });
   }
   messages.push({ role: "user", content: prompt });
-
-  const timeout = setTimeout(() => { /* the caller's signal drives abort */ }, runtime.turnTimeoutMs);
   let assembled = "";
 
   try {
     for (let round = 0; round < MAX_ROUNDS; round++) {
-      const body = JSON.stringify({ model, messages, stream: true, ...(toolDefs.length ? { tools: toolDefs } : {}) });
-      let res: Response;
-      try {
-        res = await fetch(url, { method: "POST", headers, body, signal });
-      } catch (e) {
-        yield { type: "error", message: `Could not reach ${label} at ${url}: ${e instanceof Error ? e.message : String(e)}` };
-        return;
-      }
-      if (!res.ok || !res.body) {
+      let body: ReadableStream<Uint8Array> | null = null;
+      // One retry: a gateway that does not know `reasoning_effort` answers 400
+      // naming it, and the fix is simply to stop sending it.
+      while (!body) {
+        const payload = JSON.stringify({
+          model, messages, stream: true,
+          ...(toolDefs.length ? { tools: toolDefs } : {}),
+          ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
+        });
+        let res: Response;
+        try {
+          res = await fetch(url, { method: "POST", headers, body: payload, signal: ac.signal });
+        } catch (e) {
+          if (isAbortError(e) || ac.signal.aborted) throw e; // the outer catch says "cancelled"
+          yield { type: "error", message: `Could not reach ${label} at ${url}: ${e instanceof Error ? e.message : String(e)}` };
+          return;
+        }
+        if (res.ok && res.body) { body = res.body; break; }
         const detail = (await res.text().catch(() => "")).slice(0, 400);
-        yield { type: "error", message: `${label} returned HTTP ${res.status}. ${detail}` };
+        if (res.status === 400 && reasoningEffort && /reasoning_effort|reasoning\.effort/i.test(detail)) {
+          // Two known refusals: "function tools with reasoning_effort are not
+          // supported … set reasoning_effort to 'none'" (newer OpenAI models
+          // behind a gateway) and "unsupported/unrecognized parameter" (a
+          // model or gateway that does not reason). The first wants `none`,
+          // the second wants the field gone.
+          reasoningEffort = /tools/i.test(detail) && reasoningEffort !== "none" ? "none" : undefined;
+          continue;
+        }
+        yield { type: "error", message: explainHttp(label, res.status, detail) };
         return;
       }
 
       // ── stream this round ──────────────────────────────────────────────────
-      const reader = res.body.getReader();
+      const reader = body.getReader();
       const decoder = new TextDecoder();
       let buf = "";
       let roundText = "";
@@ -135,10 +168,15 @@ export async function* runChatTurn(
             if (!trimmed.startsWith("data:")) continue;
             const payload = trimmed.slice(5).trim();
             if (payload === "[DONE]") break readLoop;
-            let json: { choices?: Array<{ delta?: { content?: string; tool_calls?: Array<{ index?: number; id?: string; function?: { name?: string; arguments?: string } }> }; finish_reason?: string }> };
+            let json: OaiChunk;
             try { json = JSON.parse(payload); } catch { continue; }
+            // Some servers report a mid-stream failure as an `error` chunk on
+            // a 200 response rather than closing the socket.
+            if (json.error?.message) { yield { type: "error", message: `${label}: ${json.error.message}` }; return; }
             const choice = json.choices?.[0];
             if (!choice) continue;
+            const thought = choice.delta?.reasoning_content ?? choice.delta?.reasoning;
+            if (thought) yield { type: "thinking", text: thought };
             const dc = choice.delta?.content;
             if (dc) { roundText += dc; assembled += dc; yield { type: "delta", text: dc }; }
             for (const tc of choice.delta?.tool_calls ?? []) {
@@ -170,6 +208,7 @@ export async function* runChatTurn(
       });
 
       for (const call of pending) {
+        if (ac.signal.aborted) { yield { type: "error", message: CANCELLED }; return; }
         let args: Record<string, unknown> = {};
         try { args = call.args ? JSON.parse(call.args) : {}; } catch { /* malformed args */ }
         const activity: ToolActivity = {
@@ -181,17 +220,7 @@ export async function* runChatTurn(
           yield { type: "graph_touched", caseName: args.caseName };
         }
 
-        const tool = byName.get(call.name);
-        let out = "";
-        let isError = false;
-        if (!tool) { out = `No such tool: ${call.name}`; isError = true; }
-        else {
-          try {
-            const r = await tool.handler(args, {});
-            out = textOf(r) || "(no output)";
-            isError = !!r?.isError;
-          } catch (e) { out = `Tool failed: ${e instanceof Error ? e.message : String(e)}`; isError = true; }
-        }
+        const { out, isError } = await run(call.name, args);
         yield { type: "tool_end", id: activity.id, status: isError ? "error" : "ok", detail: out.slice(0, 240) };
         messages.push({ role: "tool", tool_call_id: activity.id, content: out.slice(0, MAX_TOOL_CHARS) });
       }
@@ -202,19 +231,18 @@ export async function* runChatTurn(
     else yield { type: "error", message: "Hit the tool-call limit for one turn. Try narrowing the request." };
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
-    yield { type: "error", message: /abort/i.test(msg) ? "That request was cancelled." : msg };
+    yield { type: "error", message: isAbortError(error) || ac.signal.aborted ? CANCELLED : msg };
   } finally {
     clearTimeout(timeout);
+    signal.removeEventListener("abort", onAbort);
   }
 }
 
-/** Ask a local Ollama for the models it has pulled (used by the model picker). */
-export async function listOllamaModels(baseUrl: string): Promise<string[]> {
-  try {
-    const root = (baseUrl || "http://localhost:11434/v1").replace(/\/v1\/?$/, "").replace(/\/+$/, "");
-    const res = await fetch(`${root}/api/tags`, { signal: AbortSignal.timeout(4000) });
-    if (!res.ok) return [];
-    const j = (await res.json()) as { models?: Array<{ name?: string }> };
-    return (j.models ?? []).map((m) => m.name ?? "").filter(Boolean);
-  } catch { return []; }
+/** Turn an HTTP failure into a sentence that says what to do next. */
+function explainHttp(label: string, status: number, detail: string): string {
+  if (status === 401) return `${label} rejected the API key (HTTP 401). Check it in Settings → Model.`;
+  if (status === 403) return `${label} refused the request (HTTP 403). The key may not have access to this model.`;
+  if (status === 404) return `${label} does not know that model (HTTP 404). Pick another in the model picker under the chat.`;
+  if (status === 429) return `${label} is rate-limiting or out of quota (HTTP 429). Wait a moment, or pick a smaller model.`;
+  return `${label} returned HTTP ${status}. ${detail}`;
 }

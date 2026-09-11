@@ -1,5 +1,5 @@
 import { app } from "electron";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve, join } from "node:path";
 import type { AetherSettings } from "../shared/types";
 
@@ -46,6 +46,9 @@ function loadDotEnv(path: string): void {
 }
 loadDotEnv(join(PRIVATE_DIR, ".env"));
 
+/** Version 2: gpt-4o and the dated Haiku id stopped being the shipped defaults. */
+const SETTINGS_VERSION = 2;
+
 const DEFAULT_SETTINGS: AetherSettings = {
   ownerName: process.env.AETHER_OWNER ?? "friend",
   model: process.env.AETHER_MODEL ?? "claude-opus-5",
@@ -59,14 +62,15 @@ const DEFAULT_SETTINGS: AetherSettings = {
 
   provider: (process.env.AETHER_PROVIDER as AetherSettings["provider"]) ?? "claude",
   openaiBaseUrl: process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1",
-  openaiModel: process.env.OPENAI_MODEL ?? "gpt-4o",
+  openaiModel: process.env.OPENAI_MODEL ?? "gpt-5.6-terra",
   ollamaBaseUrl: process.env.OLLAMA_BASE_URL ?? "http://localhost:11434/v1",
-  ollamaModel: process.env.OLLAMA_MODEL ?? "llama3.1",
-  geminiModel: process.env.GEMINI_MODEL ?? "gemini-2.5-pro",
+  ollamaModel: process.env.OLLAMA_MODEL ?? "qwen3",
+  geminiModel: process.env.GEMINI_MODEL ?? "gemini-3.8-flash",
 
   autoUpdate: true,
   theme: (process.env.AETHER_THEME as AetherSettings["theme"]) ?? "system",
   setupDone: false,
+  settingsVersion: SETTINGS_VERSION,
 };
 
 export const paths = {
@@ -103,6 +107,19 @@ export function loadSettings(): AetherSettings {
       // narrowing it — true meant "no prompts", false meant "collection only".
       if (raw.access === undefined && typeof raw.autonomy === "boolean") {
         merged.access = raw.autonomy ? "full" : "safe";
+      }
+      // Defaults an earlier build wrote into the file that are retired now:
+      // gpt-4o's snapshots are on a shutdown schedule, and the dated Haiku id
+      // has an undated alias. Moved ONCE, gated on the file's version — on a
+      // later launch the same value can only be a choice the operator made,
+      // and the picker still offers gpt-4o on any gateway that serves it.
+      const fromVersion = typeof raw.settingsVersion === "number" ? raw.settingsVersion : 1;
+      if (fromVersion < 2) {
+        if (raw.openaiModel === "gpt-4o") merged.openaiModel = DEFAULT_SETTINGS.openaiModel;
+        if (raw.model === "claude-haiku-4-5-20251001") merged.model = "claude-haiku-4-5";
+        merged.settingsVersion = SETTINGS_VERSION;
+        // Persist the marker now, so it holds even if Settings is never saved.
+        try { writeFileSync(paths.settingsFile, JSON.stringify(merged, null, 2), "utf8"); } catch { /* next save will */ }
       }
       return merged;
     }

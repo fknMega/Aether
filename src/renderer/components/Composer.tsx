@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useStore } from "../state/store";
-import type { OutboundImage } from "../../shared/types";
-import { IImage, IClose, ISend, IStop } from "./icons";
+import { ACCESS_LEVELS, type AccessLevel, type ModelInfo, type OutboundImage } from "../../shared/types";
+import { PROVIDER_LABEL, canonicalClaudeModel, staticModels } from "../../shared/models";
+import { IImage, IClose, ISend, IStop, IWarn } from "./icons";
 
 interface Pending extends OutboundImage { preview: string; }
 
@@ -9,17 +10,23 @@ const hasFiles = (e: React.DragEvent) => Array.from(e.dataTransfer.types).includ
 
 const MAX = 6;
 
-const MODELS = [
-  { id: "claude-opus-5", label: "Opus 5" },
-  { id: "claude-sonnet-5", label: "Sonnet 5" },
-  { id: "claude-haiku-4-5-20251001", label: "Haiku 4.5" },
-];
 const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
-/* The rest of the product names providers, not provider ids — Settings says
-   "ChatGPT", so the composer must not say "openai". */
-const PROVIDER_LABEL: Record<string, string> = {
-  claude: "Claude", openai: "ChatGPT", gemini: "Gemini", ollama: "Ollama",
-};
+
+/** Bytes → "13.9 GB" for a local model's footprint. */
+const gb = (n?: number) => (n ? `${(n / 1e9).toFixed(n >= 1e10 ? 0 : 1)} GB` : "");
+
+/** What the picker prints for one model. A local model carries its state in
+ *  the label — loaded, no tool calling — because that is the difference
+ *  between a turn that works and one that only chats. */
+function optionLabel(m: ModelInfo, provider: string): string {
+  if (m.label && provider !== "ollama") return m.label;
+  const bits: string[] = [];
+  if (m.running) bits.push("loaded");
+  if (m.tools === false) bits.push("no tools");
+  const size = provider === "ollama" ? gb(m.sizeBytes) : "";
+  if (size) bits.push(size);
+  return bits.length ? `${m.label ?? m.id} · ${bits.join(" · ")}` : (m.label ?? m.id);
+}
 
 export function Composer() {
   const [text, setText] = useState("");
@@ -33,30 +40,31 @@ export function Composer() {
   const cancel = useStore((s) => s.cancel);
   const settings = useStore((s) => s.settings);
   const providerStatus = useStore((s) => s.providerStatus);
-  const localModels = providerStatus?.models ?? [];
+  const refreshProviderStatus = useStore((s) => s.refreshProviderStatus);
   const saveSettings = useStore((s) => s.saveSettings);
   const draft = useStore((s) => s.draft);
   const setDraft = useStore((s) => s.setDraft);
   const provider = settings?.provider ?? "claude";
   const effort = settings?.effort;
+  const access: AccessLevel = settings?.access ?? "ask";
 
-  // The picker follows the active provider: Claude presets, the local Ollama
-  // models we discovered, or whatever OpenAI model is configured.
-  const uniq = (xs: string[]) => [...new Set(xs.filter(Boolean))];
-  const GEMINI = ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"];
+  // The picker follows the active provider. Ollama and ChatGPT-compatible
+  // endpoints are listed live by main; Claude and Gemini come from the static
+  // table, which is also what stands in until the live listing arrives.
+  const listed: ModelInfo[] = (providerStatus?.provider === provider && providerStatus.modelInfo?.length)
+    ? providerStatus.modelInfo
+    : [...staticModels(provider)];
+  const stored =
+    provider === "openai" ? (settings?.openaiModel ?? "")
+    : provider === "ollama" ? (settings?.ollamaModel ?? "")
+    : provider === "gemini" ? (settings?.geminiModel ?? "")
+    : canonicalClaudeModel(settings?.model ?? "claude-opus-5");
+  // `llama3.1` and `llama3.1:latest` are one model; highlight the listed spelling.
   const current =
-    provider === "openai" ? (settings?.openaiModel ?? "gpt-4o")
-    : provider === "ollama" ? (settings?.ollamaModel ?? "llama3.1")
-    : provider === "gemini" ? (settings?.geminiModel ?? "gemini-2.5-pro")
-    : (settings?.model ?? "claude-opus-5");
-  const modelOptions: Array<{ id: string; label: string }> =
-    provider === "claude"
-      ? (MODELS.some((m) => m.id === current) ? MODELS : [...MODELS, { id: current, label: current }])
-      : uniq(
-          provider === "ollama" ? [current, ...localModels]
-          : provider === "gemini" ? [current, ...GEMINI]
-          : [current, "gpt-4o", "gpt-4o-mini", "o3-mini"],
-        ).map((m) => ({ id: m, label: m }));
+    provider === "ollama" && stored && !listed.some((m) => m.id === stored) && listed.some((m) => m.id === `${stored}:latest`)
+      ? `${stored}:latest` : stored;
+  const modelOptions: ModelInfo[] = current && !listed.some((m) => m.id === current) ? [{ id: current }, ...listed] : listed;
+  const currentInfo = listed.find((m) => m.id === current);
   const onPickModel = (v: string) =>
     void saveSettings(
       provider === "openai" ? { openaiModel: v }
@@ -64,6 +72,35 @@ export function Composer() {
       : provider === "gemini" ? { geminiModel: v }
       : { model: v },
     );
+  // Ollama can start, load or pull a model at any time; ask again when the
+  // picker opens rather than making the operator find Re-scan in Settings.
+  const listsLive = provider === "ollama" || provider === "openai";
+  const onOpenModels = () => { if (listsLive) void refreshProviderStatus(); };
+
+  const setAccess = (v: AccessLevel) => { if (v !== access) void saveSettings({ access: v }); };
+  /** Shift+Tab toggles Safe ↔ Ask (and steps Full back to Ask), the way
+   *  Claude Code's prompt cycles its permission modes — and, like Claude Code,
+   *  the no-prompts level is not on the key: one stray keystroke must never
+   *  open the shell to an injected page. Full is a deliberate pick from the
+   *  select, or from Settings. */
+  const [announce, setAnnounce] = useState<string | null>(null);
+  const cycleAccess = () => {
+    const next: AccessLevel = access === "safe" ? "ask" : "safe";
+    setAccess(next);
+    const info = ACCESS_LEVELS.find((a) => a.value === next)!;
+    setAnnounce(`Access: ${info.label} — ${info.headline}`);
+  };
+  // The announcement stands in for the key hints for a moment, then yields.
+  useEffect(() => {
+    if (!announce) return;
+    const t = setTimeout(() => setAnnounce(null), 2500);
+    return () => clearTimeout(t);
+  }, [announce]);
+  const accessInfo = ACCESS_LEVELS.find((a) => a.value === access) ?? ACCESS_LEVELS[1];
+
+  // One line under the composer. Priority: something wrong with the selection
+  // (it will fail on send), then a just-changed access level, then the key hints.
+  const warning = providerStatus?.provider === provider ? providerStatus.warning : undefined;
 
   const grow = () => { const el = taRef.current; if (el) { el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 200) + "px"; } };
 
@@ -125,7 +162,10 @@ export function Composer() {
               onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
               onChange={(e) => { setText(e.target.value); grow(); }}
               onPaste={(e) => { const f = Array.from(e.clipboardData.files); if (f.length) void addFiles(f); }}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }} />
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
+                else if (e.key === "Tab" && e.shiftKey) { e.preventDefault(); cycleAccess(); }
+              }} />
             <div className="acts">
               <button className="icon-btn" aria-label="Attach image" title="Attach image"
                 disabled={imgs.length >= MAX} onClick={() => fileRef.current?.click()}><IImage /></button>
@@ -138,23 +178,37 @@ export function Composer() {
           </div>
         </div>
         <div className="composer-foot">
-          <label className="pick" title={`Model — ${PROVIDER_LABEL[provider] ?? provider}`}>
+          <label className="pick" title={`Model — ${PROVIDER_LABEL[provider] ?? provider}${currentInfo?.contextLength ? ` · ${Math.round(currentInfo.contextLength / 1000)}k context` : ""}`}>
             <span className="k">model</span>
             {/* The wrapping label's text content swallows every option, so the
                 select's accessible name has to be set explicitly. */}
-            <select aria-label="Model" value={current} onChange={(e) => onPickModel(e.target.value)}>
-              {modelOptions.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+            <select aria-label="Model" value={current} onChange={(e) => onPickModel(e.target.value)} onMouseDown={onOpenModels} onFocus={onOpenModels}>
+              {modelOptions.map((m) => <option key={m.id} value={m.id}>{optionLabel(m, provider)}</option>)}
             </select>
           </label>
-          {provider === "claude" && (
-            <label className="pick" title="Reasoning effort — higher thinks longer, lower answers sooner">
-              <span className="k">effort</span>
-              <select aria-label="Reasoning effort" value={effort ?? "medium"} onChange={(e) => void saveSettings({ effort: e.target.value as (typeof EFFORTS)[number] })}>
-                {EFFORTS.map((eff) => <option key={eff} value={eff}>{eff}</option>)}
-              </select>
-            </label>
-          )}
-          <div className="hint">Enter to send · Shift+Enter for a new line</div>
+          {/* Effort steers every provider that can reason: Claude's effort
+              levels, reasoning_effort on GPT/o-series/gpt-oss, thinking on
+              Gemini and on thinking-capable local models. */}
+          <label className="pick" title="Reasoning effort — higher thinks longer, lower answers sooner">
+            <span className="k">effort</span>
+            <select aria-label="Reasoning effort" value={effort ?? "medium"} onChange={(e) => void saveSettings({ effort: e.target.value as (typeof EFFORTS)[number] })}>
+              {EFFORTS.map((eff) => <option key={eff} value={eff}>{eff}</option>)}
+            </select>
+          </label>
+          {/* What Aether may do this turn. Full is painted as a warning because
+              it is one: no prompt stands between an injected page and the
+              shell. Shift+Tab in the box cycles it. */}
+          <label className={`pick access ${access}`} title={`Access — ${accessInfo.headline}. ${accessInfo.blurb} Shift+Tab in the box toggles Safe/Ask; Full is chosen here.`}>
+            <span className="k">access</span>
+            <select aria-label="Access level" aria-keyshortcuts="Shift+Tab" value={access} onChange={(e) => setAccess(e.target.value as AccessLevel)}>
+              {ACCESS_LEVELS.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
+            </select>
+          </label>
+          {/* Live region: a level changed from the keyboard is announced here,
+              since the select that reflects it is not the focused element. */}
+          {warning
+            ? <div className="hint warn" role="status" aria-live="polite"><IWarn size={12} />{warning}</div>
+            : <div className="hint" role="status" aria-live="polite">{announce ?? "Enter to send · Shift+Enter new line · Shift+Tab safe/ask"}</div>}
         </div>
       </div>
     </div>

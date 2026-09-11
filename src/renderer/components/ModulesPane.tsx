@@ -22,7 +22,7 @@ import {
 // did not exist and get a tool that always failed.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const KIND_LABEL: Record<string, string> = { builtin: "Built-in", command: "Command", http: "API", connector: "Connector" };
+const KIND_LABEL: Record<string, string> = { builtin: "Built-in", command: "Command", http: "API", connector: "Your code" };
 
 /** What stands between this module and a tool that actually works. */
 type Readiness =
@@ -72,7 +72,10 @@ function ModuleRow({
 
   const r = readinessOf(m, tool, canRunCommands);
   const keys = m.secrets?.length ?? 0;
-  const editable = m.kind === "command" || m.kind === "http";
+  // Everything opens in the editor: custom modules fully, a connector or a
+  // built-in for its name, description and the operator's notes to the model.
+  const editable = true;
+  const deletable = (m.kind === "command" || m.kind === "http") && !m.default;
 
   // The one gesture. Switching on something that is not installed installs it
   // first and only enables on success — so there is never an enabled module
@@ -100,6 +103,7 @@ function ModuleRow({
           {m.name}
           <span className="tag">{KIND_LABEL[m.kind] ?? m.kind}</span>
           {keys > 0 && <span className="tag strong" title={`${keys} key${keys === 1 ? "" : "s"} stored`}><IKey size={11} />{keys}</span>}
+          {m.instructions?.trim() && <span className="tag" title={`Notes for Aether: ${m.instructions}`}>notes</span>}
         </div>
         <div className="mdesc" title={m.description}>{m.description}</div>
         {r.state !== "ready" && r.state !== "off" && (
@@ -107,6 +111,7 @@ function ModuleRow({
             {r.note}
           </div>
         )}
+        {tool?.note && tool.state === "installed" && <div className="mmeta warn" title={tool.note}>{tool.note}</div>}
       </div>
       <div className="mod-acts">
         {r.state === "needs" && r.action === "copy" && r.command && (
@@ -127,22 +132,18 @@ function ModuleRow({
         {r.state === "busy" && <span className="locked">installing</span>}
         {editable && (
           <>
-            <button className="mini-btn" aria-label={`Edit ${m.name}`} title="Edit" onClick={() => onEdit(m)}><IEdit /></button>
-            {!m.default && <button className="mini-btn danger" aria-label={`Delete ${m.name}`} title="Delete" onClick={() => void del(m.id)}><ITrash /></button>}
+            <button className="mini-btn" aria-label={`Edit ${m.name}`} title={m.kind === "connector" || m.kind === "builtin" ? "Notes and description" : "Edit"} onClick={() => onEdit(m)}><IEdit /></button>
+            {deletable && <button className="mini-btn danger" aria-label={`Delete ${m.name}`} title="Delete" onClick={() => void del(m.id)}><ITrash /></button>}
           </>
         )}
-        {m.kind === "connector"
-          ? <span className="locked">code</span>
-          : (
-            <button
-              className={`switch${m.enabled ? " on" : ""}`}
-              role="switch"
-              aria-checked={m.enabled}
-              aria-label={switchLabel}
-              disabled={r.state === "busy"}
-              onClick={() => void onToggle()}
-            />
-          )}
+        <button
+          className={`switch${m.enabled ? " on" : ""}`}
+          role="switch"
+          aria-checked={m.enabled}
+          aria-label={switchLabel}
+          disabled={r.state === "busy"}
+          onClick={() => void onToggle()}
+        />
       </div>
     </div>
   );
@@ -154,7 +155,7 @@ export function ModulesPane({ onEdit, onAdd }: { onEdit: (m: ModuleConfig) => vo
   // Only Safe withholds command modules outright; at Ask the prompt is the gate.
   const canRunCommands = useStore((s) => (s.settings?.access ?? "ask") !== "safe");
   const [query, setQuery] = useState("");
-  const [open, setOpen] = useState<Record<string, boolean>>({ custom: true, connector: true });
+  const [open, setOpen] = useState<Record<string, boolean>>({ custom: true });
 
   const toolBy = useMemo(() => new Map(tools.map((t) => [t.moduleId, t])), [tools]);
 

@@ -25,12 +25,16 @@ test("recipes are argv arrays, never shell strings", () => {
   // matter. spawn() with an argv array cannot be talked into a second command.
   for (const t of allTools()) {
     for (const r of t.recipes) {
-      assert.ok(Array.isArray(r.argv), `${t.bin}: argv must be an array`);
-      for (const arg of r.argv) {
-        assert.equal(typeof arg, "string");
-        assert.doesNotMatch(arg, /[;&|`$><\n]/, `${t.bin}: argv contains a shell metacharacter: ${arg}`);
+      for (const step of [r, ...(r.pre ?? []), ...(r.post ?? [])]) {
+        assert.ok(Array.isArray(step.argv), `${t.bin}: argv must be an array`);
+        for (const arg of step.argv) {
+          assert.equal(typeof arg, "string");
+          // On Windows the managers are started through cmd.exe (they are .cmd
+          // shims), so this is what keeps a constant argv a constant command.
+          assert.doesNotMatch(arg, /[;&|`$><\n^%"]/, `${t.bin}: argv contains a shell metacharacter: ${arg}`);
+        }
+        assert.doesNotMatch(step.manager, /[^a-z]/, `${t.bin}: manager must be a bare binary name`);
       }
-      assert.doesNotMatch(r.manager, /[^a-z]/, `${t.bin}: manager must be a bare binary name`);
     }
   }
 });
@@ -40,8 +44,10 @@ test("no recipe contains a placeholder that something could be substituted into"
   // caller is expected to fill it in, which is exactly what must not happen.
   for (const t of allTools()) {
     for (const r of t.recipes) {
-      for (const arg of r.argv) {
-        assert.doesNotMatch(arg, /\{|\}|\$\{/, `${t.bin}: recipe argument looks templated: ${arg}`);
+      for (const step of [r, ...(r.pre ?? []), ...(r.post ?? [])]) {
+        for (const arg of step.argv) {
+          assert.doesNotMatch(arg, /\{|\}|\$\{/, `${t.bin}: recipe argument looks templated: ${arg}`);
+        }
       }
     }
   }

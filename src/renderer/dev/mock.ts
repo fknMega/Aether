@@ -7,8 +7,9 @@ import type { AetherApi, ChatEventEnvelope, ConversationDetail, AttachmentPayloa
 import type {
   AetherSettings, AuthStatus, Conversation, Message, CaseGraph, GraphCaseInfo,
   GraphNode, GraphEdge, ChatRequest, AgentEvent, ModuleConfig, ToolStatus, InstallProgress,
-  PermissionRequest, PermissionReply,
+  PermissionRequest, PermissionReply, ModelInfo, ProviderStatus,
 } from "../../shared/types";
+import { staticModels } from "../../shared/models";
 
 const q = new URLSearchParams(location.search);
 const now = Date.now();
@@ -31,20 +32,22 @@ let settings: AetherSettings = {
   effort: "medium",
   personaVoice: "flirty",
   access: (q.get("access") as AetherSettings["access"]) ?? "ask",
-  provider: "claude",
+  provider: (q.get("provider") as AetherSettings["provider"]) ?? "claude",
   openaiBaseUrl: "https://api.openai.com/v1",
-  openaiModel: "gpt-4o",
+  openaiModel: "gpt-5",
   ollamaBaseUrl: "http://localhost:11434/v1",
-  ollamaModel: "llama3.1",
-  geminiModel: "gemini-2.5-pro",
+  ollamaModel: "gemma4-uncensored-64k",
+  geminiModel: "gemini-3.8-flash",
   autoUpdate: true,
   theme: themeParam,
   // ?setup=1 replays the first-run experience.
   setupDone: !q.has("setup"),
 };
 
-let providerKeySet = false;
-let geminiSignedIn = false;
+// `?key=1` pretends a key is stored for ChatGPT/Gemini, so those panes can be
+// pictured in their connected state.
+let providerKeySet = q.has("key");
+let geminiKeySet = q.has("key");
 
 const auth: AuthStatus = q.get("onboard")
   ? { loggedIn: false, authMethod: null, detail: "Run npm run login, or sign in here." }
@@ -252,7 +255,7 @@ let mods: ModuleConfig[] = [
   { id: "def:nikto", name: "nikto", kind: "command", enabled: false, builtin: false, default: true, description: "Nikto web-server misconfiguration scan of an authorized URL.", inputLabel: "an in-scope URL", command: "nikto -h {input} -ask no -Display P" },
   { id: "m-nesher", name: "nesher", kind: "http", enabled: true, builtin: false, method: "GET", description: "Search breach corpora for an email, username, or phone and return matching leaked records.", inputLabel: "an email, username, phone, or domain", url: "https://api.nesher.example/v1/search?q={input}", headers: [{ name: "Authorization", value: "Bearer {{NESHER_KEY}}" }], body: "", secrets: [{ name: "NESHER_KEY", set: true }] },
   { id: "m-amass", name: "amass", kind: "command", enabled: false, builtin: false, description: "Enumerate subdomains for a domain with OWASP Amass and print the discovered hosts.", inputLabel: "a domain", command: "amass enum -d {input} -silent", secrets: [] },
-  { id: "connector:facebook_id", name: "facebook_id", kind: "connector", enabled: true, builtin: true, description: "Loaded from a private code connector." },
+  { id: "connector:nesher", name: "nesher", kind: "connector", enabled: true, builtin: false, description: "Your own code connector (private/connectors/nesher.mjs). Tools: nesher_search, nesher_power_search, facebook_id.", instructions: "Israeli phone numbers go in local format (05x…), never +972.", connectorFile: "nesher.mjs", connectorTools: ["nesher_search", "nesher_power_search", "facebook_id"] },
 ];
 const redactMods = (): ModuleConfig[] => mods.map((m) => ({ ...m, secrets: (m.secrets ?? []).map((s) => ({ name: s.name, set: true })) }));
 let modulesCb: (() => void) | null = null;
@@ -377,6 +380,38 @@ const PERM_DEMO: Record<string, Omit<PermissionRequest, "id">> = {
   install: { kind: "install", title: "Install a tool", detail: "subfinder — brew install subfinder", reason: "The passive subdomain sweep needs it and it is not installed." },
 };
 
+// ── provider status (preview) ────────────────────────────────────────────────
+// What main's providerStatus would say for each provider. The Ollama listing
+// is the realistic shape — pulled models with mixed capabilities and one loaded
+// — so the picker labels, the tags in Settings and the selection warning can
+// all be seen. `?ollama=down` shows the unreachable state; `?warn=1` selects a
+// model that cannot call tools so the composer's warning line renders.
+const OLLAMA_SEED: ModelInfo[] = [
+  { id: "gemma4-uncensored-64k:latest", running: true, tools: true, thinking: true, contextLength: 262144, numCtx: 65536, sizeBytes: 13.9e9 },
+  { id: "qwen3:14b", tools: true, thinking: true, contextLength: 40960, sizeBytes: 9.3e9 },
+  { id: "gpt-oss:20b", tools: true, thinking: true, contextLength: 131072, sizeBytes: 13.8e9 },
+  { id: "llama3.1:latest", tools: true, contextLength: 131072, sizeBytes: 4.9e9 },
+  { id: "llava:13b", tools: false, vision: true, contextLength: 4096, sizeBytes: 8.0e9 },
+];
+if (q.get("warn")) settings.ollamaModel = "llava:13b";
+function mockProviderStatus(): ProviderStatus {
+  const p = settings.provider;
+  const hasKey = p === "openai" ? providerKeySet : p === "gemini" ? geminiKeySet : true;
+  if (p === "ollama") {
+    if (q.get("ollama") === "down") return { provider: p, hasKey, models: [], modelInfo: [], detail: "Ollama is not reachable. Is `ollama serve` running?" };
+    const sel = OLLAMA_SEED.find((m) => m.id === settings.ollamaModel || m.id === `${settings.ollamaModel}:latest`);
+    const warning = !sel ? `${settings.ollamaModel} is not pulled on this Ollama. Run \`ollama pull ${settings.ollamaModel}\`, or pick one of the models it has.`
+      : sel.tools === false ? `${sel.id} does not advertise tool calling, so Aether can chat but cannot search or write the graph. Pick a tool-capable model.`
+      : undefined;
+    return { provider: p, hasKey, models: OLLAMA_SEED.map((m) => m.id), modelInfo: OLLAMA_SEED, listedLive: true, detail: "5 local models · 4 with tool calling · 1 loaded now", ...(warning ? { warning } : {}) };
+  }
+  const modelInfo = [...staticModels(p)];
+  return {
+    provider: p, hasKey, models: modelInfo.map((m) => m.id), modelInfo, listedLive: p !== "claude" && hasKey,
+    detail: p === "gemini" ? (geminiKeySet ? "7 models available to this key" : "Add a Gemini API key from Google AI Studio. Flash models have a free tier.") : undefined,
+  };
+}
+
 const api: AetherApi = {
   platform: q.get("platform") ?? "darwin",
   getSettings: async () => settings,
@@ -422,16 +457,8 @@ const api: AetherApi = {
   installUpdate: async () => {},
   onUpdateStatus: () => () => {},
 
-  providerStatus: async () => ({
-    provider: settings.provider,
-    hasKey: settings.provider === "openai" ? providerKeySet : settings.provider === "gemini" ? geminiSignedIn : true,
-    models: settings.provider === "ollama" ? ["llama3.1:latest", "qwen2.5:14b", "gemma4-uncensored-64k:latest"]
-      : settings.provider === "gemini" ? ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"] : [],
-    detail: settings.provider === "gemini" ? (geminiSignedIn ? "Signed in as you@gmail.com" : "Sign in with your Google account to use Gemini free.") : undefined,
-  }),
-  setProviderKey: async (_p, key) => { providerKeySet = !!key; return { provider: settings.provider, hasKey: settings.provider === "openai" ? providerKeySet : true, models: [] }; },
-  providerLogin: async (p) => { if (p === "gemini") geminiSignedIn = true; return { ok: true, message: "Signed in as you@gmail.com" }; },
-  providerLogout: async (p) => { if (p === "gemini") geminiSignedIn = false; return { provider: settings.provider, hasKey: settings.provider === "gemini" ? geminiSignedIn : true, models: settings.provider === "gemini" ? ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"] : [] }; },
+  providerStatus: async () => mockProviderStatus(),
+  setProviderKey: async (p, key) => { if (p === "gemini") geminiKeySet = !!key; else providerKeySet = !!key; return mockProviderStatus(); },
 
   toolStatuses: async () => toolRows(),
   installTool: async (id: string) => fakeInstall(id),
@@ -467,6 +494,14 @@ const api: AetherApi = {
     return redactMods();
   },
   deleteModule: async (id) => { mods = mods.filter((m) => m.id !== id); modulesCb?.(); return redactMods(); },
+  testModule: async (mod, sample) => {
+    await new Promise((r) => setTimeout(r, 600));
+    if (mod.kind === "http") {
+      const url = (mod.url ?? "").replace("{input}", encodeURIComponent(sample)) + (mod.freeform ? sample.replace(/^\//, "") : "");
+      return { ok: true, request: `${mod.method ?? "GET"} ${url}`, status: 200, output: JSON.stringify({ query: sample, results: [{ id: 1, note: "preview response" }] }, null, 2), ms: 412 };
+    }
+    return { ok: true, request: (mod.command ?? "").replace("{input}", `'${sample}'`), output: `[preview] ${mod.name} ran against ${sample}\n3 results`, ms: 1180 };
+  },
   toggleModule: async (id, enabled) => { const m = mods.find((x) => x.id === id); if (m) m.enabled = enabled; modulesCb?.(); return redactMods(); },
   onChatEvent: (cb) => { chatCb = cb; return () => { if (chatCb === cb) chatCb = null; }; },
   onGraphChanged: () => () => {},

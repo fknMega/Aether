@@ -17,16 +17,20 @@ import { installTools } from "./install";
 
 type SdkTool = ReturnType<typeof tool<any>>;
 
+/** One connector file and the tools it produced. `failed` marks a file that
+ *  is on disk but could not be loaded (a syntax error mid-edit, a missing
+ *  dependency); its module is kept — switch, name, notes — for when it works. */
+interface Connector { file: string; tools: SdkTool[]; toolNames: string[]; failed?: boolean; }
+
 /**
  * Load every `private/connectors/*.mjs`. Each default-exports a factory
  * `({ tool, z, config }) => Tool[]`. This is how the licensed breach connector
  * reaches Aether on the owner's machine without ever entering the public repo.
  */
-async function loadPrivateConnectors(ctx: ToolContext): Promise<{ tools: SdkTool[]; names: string[] }> {
+async function loadPrivateConnectors(ctx: ToolContext): Promise<Connector[]> {
   const dir = paths.connectorsDir;
-  const tools: SdkTool[] = [];
-  const names: string[] = [];
-  if (!existsSync(dir)) return { tools, names };
+  const out: Connector[] = [];
+  if (!existsSync(dir)) return out;
   for (const file of readdirSync(dir)) {
     if (!/\.(mjs|js)$/.test(file)) continue;
     try {
@@ -34,35 +38,62 @@ async function loadPrivateConnectors(ctx: ToolContext): Promise<{ tools: SdkTool
       const factory = mod.default ?? mod.register;
       if (typeof factory !== "function") continue;
       const produced: SdkTool[] = factory({ tool, z, config: { timezone: ctx.timezone } }) ?? [];
-      for (const t of produced) { tools.push(t); names.push((t as { name?: string }).name ?? "?"); }
+      const toolNames = produced.map((t) => (t as { name?: string }).name ?? "").filter(Boolean);
+      out.push({ file, tools: produced, toolNames });
     } catch (e) {
       console.error(`[aether] failed to load private connector ${file}:`, e);
+      out.push({ file, tools: [], toolNames: [], failed: true });
     }
   }
-  return { tools, names };
+  return out;
+}
+
+/** The operator's notes for a module, appended to each of its tools where the
+ *  model reads about the tool — a copy, so the underlying tool object (which
+ *  the Claude MCP server also holds) is never mutated. */
+export function withNotes<T extends { description: string }>(tools: T[], notes: string | undefined): T[] {
+  const n = notes?.trim();
+  if (!n) return tools;
+  return tools.map((t) => ({ ...t, description: `${t.description}\n\nOperator's notes for this module:\n${n}` }));
 }
 
 /** Every tool Aether can call, as plain SDK tool objects. Used directly by the
- *  OpenAI-compatible engine (ChatGPT / Ollama), and wrapped in an MCP server for
- *  the Claude Agent SDK. */
+ *  non-Claude engines, and wrapped in an MCP server for the Claude Agent SDK. */
 export async function buildToolList(ctx: ToolContext): Promise<{ tools: SdkTool[]; privateToolNames: string[] }> {
   // time + graph are core (always on). The rest are gated by their module toggle.
+  const group = (key: "username" | "recon" | "exif" | "reverse_image", make: () => SdkTool[]) =>
+    modules.isBuiltinEnabled(key) ? withNotes(make(), modules.builtinNotes(key)) : [];
   const builtIn: SdkTool[] = [
     ...timeTools(ctx),
     ...graphTools(ctx),
-    ...(modules.isBuiltinEnabled("username") ? usernameTools() : []),
-    ...(modules.isBuiltinEnabled("recon") ? netTools() : []),
-    ...(modules.isBuiltinEnabled("exif") ? exifTools() : []),
-    ...(modules.isBuiltinEnabled("reverse_image") ? imageTools() : []),
+    ...group("username", usernameTools),
+    ...group("recon", netTools),
+    ...group("exif", exifTools),
+    ...group("reverse_image", imageTools),
     // Asking for a missing program is always available; the permission policy
     // decides whether the request reaches the operator or is refused outright.
     ...installTools(ctx),
     ...buildModuleTools(ctx),
   ];
-  const priv = await loadPrivateConnectors(ctx);
-  modules.setConnectorNames(priv.names.filter((n) => n && n !== "?"));
-  if (priv.names.length) console.log(`[aether] loaded private connector tools: ${priv.names.join(", ")}`);
-  return { tools: [...builtIn, ...priv.tools], privateToolNames: priv.names };
+  const connectors = await loadPrivateConnectors(ctx);
+  // One module per connector file: the operator can switch it off, rename it,
+  // and leave notes for the model, exactly as with a module they typed in.
+  modules.registerConnectors(connectors.map((c) => ({ file: c.file, toolNames: c.toolNames, failed: c.failed })));
+  const privateTools: SdkTool[] = [];
+  const privateToolNames: string[] = [];
+  const withheld: string[] = [];
+  for (const c of connectors) {
+    for (const t of c.tools) {
+      const name = (t as { name?: string }).name ?? "";
+      const mod = modules.connectorFor(name);
+      if (mod && !mod.enabled) { withheld.push(name); continue; }
+      privateTools.push(...withNotes([t as SdkTool & { description: string }], mod?.instructions));
+      privateToolNames.push(name);
+    }
+  }
+  if (privateToolNames.length) console.log(`[aether] loaded private connector tools: ${privateToolNames.join(", ")}`);
+  if (withheld.length) console.log(`[aether] connector tools withheld (module switched off): ${withheld.join(", ")}`);
+  return { tools: [...builtIn, ...privateTools], privateToolNames };
 }
 
 export async function buildToolServer(ctx: ToolContext) {

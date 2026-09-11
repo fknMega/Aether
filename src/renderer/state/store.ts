@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type {
   AetherSettings, AuthStatus, Conversation, Message, ToolActivity,
-  GraphCaseInfo, CaseGraph, OutboundImage, ModuleConfig, ProviderStatus, Provider, UpdateStatus,
+  GraphCaseInfo, CaseGraph, OutboundImage, ModuleConfig, ModuleTestResult, ProviderStatus, Provider, UpdateStatus,
   ToolStatus, InstallProgress, PermissionRequest,
 } from "../../shared/types";
 import type { ChatEventEnvelope } from "../../shared/ipc";
@@ -59,10 +59,9 @@ interface Store {
   refreshAuth(): Promise<void>;
   saveSettings(patch: Partial<AetherSettings>): Promise<void>;
 
-  refreshProviderStatus(): Promise<void>;
+  /** `force` skips the two-second reuse window — for an explicit Re-scan. */
+  refreshProviderStatus(force?: boolean): Promise<void>;
   setProviderKey(provider: Provider, key: string): Promise<void>;
-  providerLogin(provider: Provider): Promise<{ ok: boolean; message: string }>;
-  providerLogout(provider: Provider): Promise<void>;
 
   refreshUpdateStatus(): Promise<void>;
   checkForUpdate(): Promise<void>;
@@ -82,6 +81,7 @@ interface Store {
   saveModule(mod: ModuleConfig): Promise<void>;
   deleteModule(id: string): Promise<void>;
   toggleModule(id: string, enabled: boolean): Promise<void>;
+  testModule(mod: ModuleConfig, sample: string): Promise<ModuleTestResult>;
 
   refreshConversations(): Promise<void>;
   reloadActiveMessages(): Promise<void>;
@@ -101,6 +101,14 @@ interface Store {
 }
 
 const A = window.aether;
+
+/** Provider-status dedup: the promise in flight, when the last one landed, and
+ *  a generation that is bumped whenever the settings a listing depends on
+ *  change — a result that started under the old provider or URL is discarded
+ *  rather than shown as the new one's. */
+let statusInflight: Promise<void> | null = null;
+let statusAt = 0;
+let statusGen = 0;
 
 export const useStore = create<Store>((set, get) => ({
   view: "chat",
@@ -138,12 +146,42 @@ export const useStore = create<Store>((set, get) => ({
   setView(v) { set({ view: v }); },
   dismissAuthGate() { set({ dismissedAuthGate: true }); },
   async refreshAuth() { set({ auth: await A.authStatus() }); },
-  async saveSettings(patch) { set({ settings: await A.setSettings(patch) }); },
+  async saveSettings(patch) {
+    set({ settings: await A.setSettings(patch) });
+    // A provider, endpoint or model change invalidates the listing and the
+    // selection warning: anything in flight now describes the old settings,
+    // so it is abandoned and the next refresh starts fresh.
+    if ("provider" in patch || "ollamaBaseUrl" in patch || "openaiBaseUrl" in patch || "ollamaModel" in patch || "openaiModel" in patch || "geminiModel" in patch) {
+      statusAt = 0;
+      statusGen++;
+      statusInflight = null;
+      if ("provider" in patch || "ollamaModel" in patch) void get().refreshProviderStatus();
+    }
+  },
 
-  async refreshProviderStatus() { set({ providerStatus: await A.providerStatus() }); },
+  async refreshProviderStatus(force = false) {
+    // The composer asks on every picker open (focus and mousedown both fire),
+    // and a listing is a round of network calls — so one in flight is shared,
+    // and a result younger than two seconds is reused.
+    const now = Date.now();
+    if (statusInflight) return statusInflight;
+    if (!force && now - statusAt < 2000 && get().providerStatus) return;
+    const gen = statusGen;
+    let p: Promise<void> | null = null;
+    p = (async () => {
+      try {
+        const st = await A.providerStatus();
+        if (gen !== statusGen) return; // superseded while listing
+        set({ providerStatus: st });
+        statusAt = Date.now();
+      } finally {
+        if (statusInflight === p) statusInflight = null;
+      }
+    })();
+    statusInflight = p;
+    return p;
+  },
   async setProviderKey(provider, key) { set({ providerStatus: await A.setProviderKey(provider, key) }); },
-  async providerLogin(provider) { const r = await A.providerLogin(provider); await get().refreshProviderStatus(); return r; },
-  async providerLogout(provider) { set({ providerStatus: await A.providerLogout(provider) }); },
 
   async refreshUpdateStatus() { set({ updateStatus: await A.updateStatusGet() }); },
   async checkForUpdate() { set({ updateStatus: await A.checkForUpdate() }); },
@@ -193,6 +231,7 @@ export const useStore = create<Store>((set, get) => ({
   async saveModule(mod) { set({ modules: await A.saveModule(mod) }); },
   async deleteModule(id) { set({ modules: await A.deleteModule(id) }); },
   async toggleModule(id, enabled) { set({ modules: await A.toggleModule(id, enabled) }); },
+  testModule(mod, sample) { return A.testModule(mod, sample); },
 
   setDraft(text) { set({ draft: text }); },
 

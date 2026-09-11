@@ -22,6 +22,7 @@ export function App() {
   const view = useStore((s) => s.view);
   const settings = useStore((s) => s.settings);
   const auth = useStore((s) => s.auth);
+  const providerStatus = useStore((s) => s.providerStatus);
   const theme = useStore((s) => s.settings?.theme);
   const dismissedAuthGate = useStore((s) => s.dismissedAuthGate);
   const init = useStore((s) => s.init);
@@ -52,6 +53,23 @@ export function App() {
   // Settings load asynchronously; until they arrive the OS appearance wins.
   useEffect(() => { applyThemePref(theme ?? "system"); }, [theme]);
 
+  // Is the CHOSEN provider actually reachable? Claude needs a login, OpenAI a
+  // stored key, Gemini a Google sign-in, Ollama a running server with a model.
+  // The old gate only ever checked Claude, so a Gemini or Ollama user was shown
+  // a "sign in to Claude" wall they could not clear.
+  const provider = settings?.provider ?? "claude";
+  // Only a status that belongs to the CHOSEN provider counts — the store holds
+  // the last one fetched, which for a moment after a switch is the old one's.
+  const live = providerStatus?.provider === provider ? providerStatus : null;
+  const known = provider === "claude" ? auth != null : live != null;
+  const providerReady =
+    provider === "claude" ? !!auth?.loggedIn
+    : provider === "ollama" ? (live?.models?.length ?? 0) > 0
+    : !!live?.hasKey;
+  // Onboarding is "done" once a provider is reachable or the user skipped it —
+  // that, not a Claude login specifically, is what should reveal the tool setup.
+  const onboarded = providerReady || dismissedAuthGate;
+
   const showRail = view === "chat" || view === "graph";
 
   return (
@@ -64,10 +82,12 @@ export function App() {
         {view === "settings" && <Settings />}
       </div>
       <StatusLine />
-      {auth && !auth.loggedIn && !dismissedAuthGate && <Onboarding />}
-      {/* Sign-in comes first; setup is the next thing a new user sees. */}
+      {/* Never over Settings: that pane holds the full connect UI, and a
+          provider switched there must not be covered by the welcome wall. */}
+      {known && !providerReady && !dismissedAuthGate && view !== "settings" && <Onboarding />}
+      {/* Connecting a provider comes first; tool setup is the next thing. */}
       <PermissionPrompt />
-      {settings && !settings.setupDone && (!auth || auth.loggedIn || dismissedAuthGate) && <Setup />}
+      {settings && !settings.setupDone && onboarded && <Setup />}
     </div>
   );
 }

@@ -114,10 +114,11 @@ export type AgentEvent =
 
 // ── Settings ─────────────────────────────────────────────────────────────────
 
-/** Which brain runs the turn. `claude` uses the Agent SDK; `openai` and `ollama`
- *  both speak the OpenAI-compatible /chat/completions API with tool calling;
- *  `gemini` signs in with a Google account (OAuth) and talks to Google's Code
- *  Assist API in Gemini's native content format. */
+/** Which brain runs the turn. `claude` uses the Agent SDK; `openai` speaks the
+ *  Responses API to OpenAI itself and OpenAI-compatible /chat/completions to
+ *  any other endpoint; `gemini` talks to the Gemini Developer API with an AI
+ *  Studio key, in Gemini's native content format; `ollama` uses Ollama's
+ *  native /api/chat. All four call the same tools through the same policy. */
 export type Provider = "claude" | "openai" | "ollama" | "gemini";
 
 export interface AetherSettings {
@@ -138,7 +139,7 @@ export interface AetherSettings {
   /** Local Ollama endpoint + model. */
   ollamaBaseUrl: string;
   ollamaModel: string;
-  /** Gemini model used over the Google Code Assist API (OAuth sign-in). */
+  /** Gemini model on the Gemini Developer API (AI Studio key). */
   geminiModel: string;
 
   /** Check for app updates on launch. */
@@ -150,6 +151,11 @@ export interface AetherSettings {
   /** False until the first-run setup has been shown and dismissed or completed.
    *  Setup offers to install the command-line tools the bundled modules wrap. */
   setupDone: boolean;
+
+  /** Bumped when a stored default has to be moved on upgrade, so each such
+   *  move happens once per settings file — never again on a later launch,
+   *  where the same value may be a choice the operator just made. */
+  settingsVersion?: number;
 }
 
 /**
@@ -163,6 +169,27 @@ export interface AetherSettings {
  *  full — no prompts. Everything safe-mode withholds is simply allowed.
  */
 export type AccessLevel = "safe" | "ask" | "full";
+
+/** The three levels, in increasing order of what Aether may do unprompted.
+ *  Settings, the composer picker and the onboarding copy all read this one
+ *  table, so the words for a level cannot drift between surfaces. */
+export const ACCESS_LEVELS: ReadonlyArray<{ value: AccessLevel; label: string; headline: string; blurb: string }> = [
+  {
+    value: "safe", label: "Safe",
+    headline: "Collection only",
+    blurb: "Search, recon and the graph. No shell, no file writes, no installing.",
+  },
+  {
+    value: "ask", label: "Ask",
+    headline: "Asks before it acts",
+    blurb: "Aether can request the shell, a URL, or installing a tool. You approve each one.",
+  },
+  {
+    value: "full", label: "Full",
+    headline: "No prompts",
+    blurb: "Everything Safe withholds is simply allowed. Aether reads untrusted pages — choose this deliberately.",
+  },
+];
 
 /** One thing Aether wants to do that needs a decision. */
 export interface PermissionRequest {
@@ -195,14 +222,49 @@ export interface UpdateStatus {
   message?: string;
 }
 
+/** One model a provider offers, with whatever the provider tells us about it.
+ *  Ollama reports all of these; an OpenAI-compatible /models listing reports
+ *  only the id; the static Claude and Gemini lists carry a label. */
+export interface ModelInfo {
+  id: string;
+  /** Human name for the picker; falls back to the id. */
+  label?: string;
+  /** Loaded in memory right now (Ollama `/api/ps`). */
+  running?: boolean;
+  /** Advertises tool calling. `false` means the provider said no; absent means unknown. */
+  tools?: boolean;
+  /** Can emit reasoning before answering. */
+  thinking?: boolean;
+  vision?: boolean;
+  /** Maximum context the model architecture supports, in tokens. */
+  contextLength?: number;
+  /** Context the server has it loaded with right now, when it is loaded
+   *  (Ollama /api/ps), else the `num_ctx` baked into its Modelfile if any. */
+  numCtx?: number;
+  /** The `num_ctx` its Modelfile bakes in, when it does — the operator's own
+   *  choice for this model, which a request should not undercut. */
+  bakedNumCtx?: number;
+  sizeBytes?: number;
+}
+
 /** Whether a provider is ready to run (key present / endpoint reachable). */
 export interface ProviderStatus {
   provider: Provider;
   /** True when an API key is stored for this provider (value never leaves main). */
   hasKey: boolean;
-  /** Models discovered from the provider, when it can be listed (Ollama). */
+  /** Model ids discovered from the provider, when it can be listed (Ollama,
+   *  any OpenAI-compatible endpoint with GET /models). */
   models: string[];
+  /** The same models with capability detail, when the provider reports any. */
+  modelInfo?: ModelInfo[];
+  /** True when `modelInfo` came from the provider itself (a listing), false
+   *  when it is Aether's static suggestions standing in for one. */
+  listedLive?: boolean;
   detail?: string;
+  /** Something about the CURRENT selection worth saying before the next turn:
+   *  the chosen local model does not do tool calling, its context is too small
+   *  for Aether's brief, and so on. Absent when there is nothing to say. */
+  warning?: string;
 }
 
 export interface AuthStatus {
@@ -216,7 +278,9 @@ export interface AuthStatus {
 // native tool groups (username search, recon, EXIF, reverse-image) and can be
 // toggled. Custom modules are user-authored: a local COMMAND, or an HTTP API
 // called with the user's own keys — each becomes a tool the agent can call.
-// "connector" rows are read-only mirrors of loaded private code connectors.
+// A "connector" is the operator's own code (a private/connectors/*.mjs file)
+// that produces tools; it is a custom module too — switchable, describable,
+// with notes — whose implementation happens to live on disk.
 
 export type ModuleKind = "builtin" | "command" | "http" | "connector";
 
@@ -241,12 +305,16 @@ export interface ModuleConfig {
   description: string;
   kind: ModuleKind;
   enabled: boolean;
-  /** Built-in group or code connector: core fields are locked in the UI. */
+  /** Built-in group: core fields are locked in the UI. */
   builtin: boolean;
   /** Shipped as a bundled default (editable + toggleable, but not deletable). */
   default?: boolean;
   /** Which native tool group a built-in maps to. */
   builtinKey?: "username" | "recon" | "exif" | "reverse_image";
+  /** The operator's own notes to the model about THIS module — how to read its
+   *  output, when not to use it, formats it wants. Appended to every tool the
+   *  module produces, so the model sees them exactly when it weighs the tool. */
+  instructions?: string;
   /** What Aether should pass as the free-form `input` argument. */
   inputLabel?: string;
   // command kind:
@@ -256,8 +324,30 @@ export interface ModuleConfig {
   url?: string;
   headers?: ModuleHeader[];
   body?: string;
+  /** http kind: instead of one `{input}` slot in a fixed template, let the model
+   *  shape the request — path, method, query and body — against `url` as the
+   *  base. The origin stays the operator's; the model cannot leave it. */
+  freeform?: boolean;
   // both custom kinds:
   secrets?: ModuleSecret[];
+  // connector kind (read-only facts about the file on disk):
+  /** The file under private/connectors that produced it. */
+  connectorFile?: string;
+  /** The tools the file exports. */
+  connectorTools?: string[];
+}
+
+/** Result of a test request or test run started from the module editor. */
+export interface ModuleTestResult {
+  ok: boolean;
+  /** The exact thing that was sent or run, for the operator to see. */
+  request: string;
+  /** HTTP status when the module is an API. */
+  status?: number;
+  /** The first part of what came back. */
+  output: string;
+  /** How long it took, in ms. */
+  ms: number;
 }
 
 // ── Chat request ─────────────────────────────────────────────────────────────
@@ -300,6 +390,9 @@ export interface ToolStatus {
   via?: string;
   /** The command for the USER to run, when Aether will not (root, or no manager). */
   manual?: string;
+  /** A one-time step that stays the operator's even after a successful
+   *  install (Npcap on Windows), shown beside the module. */
+  note?: string;
   error?: string;
 }
 
